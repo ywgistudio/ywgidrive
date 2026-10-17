@@ -22,17 +22,20 @@ export interface CarVisualOptions {
 let _blobTex: THREE.Texture | null = null;
 function blobTexture(): THREE.Texture {
   if (_blobTex) return _blobTex;
+  // grayscale (alphaMap samples the green channel)
   const c = document.createElement('canvas');
   c.width = c.height = 128;
   const g = c.getContext('2d')!;
-  const grd = g.createRadialGradient(64, 64, 4, 64, 64, 64);
-  grd.addColorStop(0, 'rgba(255,255,255,1)');
-  grd.addColorStop(0.45, 'rgba(255,255,255,0.75)');
-  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, 128, 128);
+  const grd = g.createRadialGradient(64, 64, 2, 64, 64, 63);
+  grd.addColorStop(0, '#ffffff');
+  grd.addColorStop(0.35, '#c8c8c8');
+  grd.addColorStop(0.7, '#3a3a3a');
+  grd.addColorStop(1, '#000000');
   g.fillStyle = grd;
   g.fillRect(0, 0, 128, 128);
   _blobTex = new THREE.CanvasTexture(c);
-  _blobTex.colorSpace = THREE.SRGBColorSpace;
   return _blobTex;
 }
 
@@ -73,7 +76,7 @@ varying float vT;
 varying vec3 vN;
 varying vec3 vV;
 void main() {
-  float edge = pow(abs(dot(normalize(vN), normalize(vV))), 1.6);
+  float edge = pow(abs(dot(normalize(vN), normalize(vV))), 2.2);
   float fall = pow(1.0 - vT, 2.4) * smoothstep(0.0, 0.06, vT);
   gl_FragColor = vec4(uColor * (uIntensity * edge * fall), 1.0);
   #include <tonemapping_fragment>
@@ -292,7 +295,7 @@ export class CarVisual {
     const lampPos = pm.headlights.map((p) => p.clone().add(this.bodyOffset));
     const beamGeo = makeBeamGeometry(lampPos);
     this.ownedGeometries.push(beamGeo);
-    this.beamMat = makeBeamMaterial(opts.player ? 0.05 : 0.075);
+    this.beamMat = makeBeamMaterial(opts.player ? 0.03 : 0.045);
     this.ownedMaterials.push(this.beamMat);
     const beams = new THREE.Mesh(beamGeo, this.beamMat);
     beams.renderOrder = 3;
@@ -301,7 +304,7 @@ export class CarVisual {
 
     if (opts.player) {
       for (const p of lampPos.slice(0, 2)) {
-        const s = new THREE.SpotLight(0xfff2e2, 1100, 140, 0.48, 0.6, 1.5);
+        const s = new THREE.SpotLight(0xfff2e2, 700, 140, 0.46, 0.65, 1.5);
         s.position.copy(p);
         s.position.z += 0.1;
         s.target.position.set(p.x * 1.6, p.y - 1.4, p.z + 26);
@@ -324,14 +327,14 @@ export class CarVisual {
 
     const glowColor = opts.underglow === undefined ? (opts.player ? 0x18e2ff : null) : opts.underglow;
     if (glowColor !== null && glowColor !== undefined) {
-      const gGeo = new THREE.PlaneGeometry(ext.x * 2 * 1.5, ext.z * 2 * 1.05);
+      const gGeo = new THREE.PlaneGeometry(ext.x * 2 * 1.25, ext.z * 2 * 0.95);
       gGeo.rotateX(-Math.PI / 2);
       this.ownedGeometries.push(gGeo);
       this.glowMat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(glowColor).multiplyScalar(1.6),
+        color: new THREE.Color(glowColor).multiplyScalar(1.1),
         alphaMap: blobTexture(),
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.32,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         polygonOffset: true,
@@ -391,11 +394,11 @@ export class CarVisual {
     this.tailMat.emissiveIntensity = 2.4 + 13 * THREE.MathUtils.clamp(o.brake, 0, 1);
     this.reverseMat.emissiveIntensity = o.reverse ? 7 : 0;
     this.headMat.emissiveIntensity = o.headlights ? 10 : 0.4;
-    this.beamMat.uniforms.uIntensity.value = o.headlights ? (this.opts.player ? 0.05 : 0.075) : 0;
+    this.beamMat.uniforms.uIntensity.value = o.headlights ? (this.opts.player ? 0.03 : 0.045) : 0;
     for (const s of this.spots) s.visible = o.headlights;
     if (this.glowMat) {
       this.time += 1 / 60;
-      this.glowMat.opacity = o.nitro ? 0.75 + Math.sin(this.time * 30) * 0.15 : 0.5;
+      this.glowMat.opacity = o.nitro ? 0.5 + Math.sin(this.time * 30) * 0.12 : 0.32;
     }
   }
 
@@ -522,7 +525,7 @@ export function makeTrafficVisual(models: CarModels, entry: CarModelEntry, paint
     trafficPaint.set(color, pmat);
   }
   if (!trafficHead) trafficHead = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff1df, emissiveIntensity: 8, roughness: 0.2 });
-  if (!trafficBeamMat) trafficBeamMat = makeBeamMaterial(0.065);
+  if (!trafficBeamMat) trafficBeamMat = makeBeamMaterial(0.04);
   const tail = new THREE.MeshStandardMaterial({ color: 0x2a0000, emissive: 0xff1608, emissiveIntensity: 2.2, roughness: 0.3 });
   const root = new THREE.Group();
   for (const p of t.parts) {

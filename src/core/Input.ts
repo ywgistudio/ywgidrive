@@ -103,9 +103,9 @@ export class Input {
         steer = Math.sign(sx) * Math.pow(Math.abs(sx), 1.4) || steer;
         throttle = Math.max(throttle, rt);
         brake = Math.max(brake, lt);
-        if (p.buttons[0]?.pressed || p.buttons[5]?.pressed) handbrake = 1; // A / RB
-        if (p.buttons[1]?.pressed || p.buttons[4]?.pressed) nitro = true; // B / LB
-        if (p.buttons[10]?.pressed || p.buttons[2]?.pressed) lookBack = lookBack || !!p.buttons[10]?.pressed;
+        if (p.buttons[0]?.pressed) handbrake = 1; // A
+        if (p.buttons[2]?.pressed) nitro = true; // X
+        if (p.buttons[1]?.pressed) lookBack = true; // B
       }
       const edge = (i: number) => {
         const now = !!p.buttons[i]?.pressed;
@@ -114,10 +114,10 @@ export class Input {
         return now && !was;
       };
       if (edge(3)) this.pressed.add('camera'); // Y
-      if (edge(2)) this.pressed.add('reset'); // X
-      if (edge(9)) this.pressed.add('pause'); // Start
-      if (edge(13)) this.pressed.add('shiftDown');
-      if (edge(12)) this.pressed.add('shiftUp');
+      if (edge(8)) this.pressed.add('reset'); // View
+      if (edge(9)) this.pressed.add('pause'); // Menu
+      if (edge(4)) this.pressed.add('shiftDown'); // LB
+      if (edge(5)) this.pressed.add('shiftUp'); // RB
       // menu nav
       if (this.onPadNav) {
         const ay = p.axes[1] ?? 0;

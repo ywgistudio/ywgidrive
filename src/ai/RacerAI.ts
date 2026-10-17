@@ -341,10 +341,15 @@ export class RacerAI {
     const z = _d.dot(veh.forward);
     const dist = Math.max(Math.hypot(x, z), 1);
     const alpha = Math.atan2(x, z);
-    let delta = Math.atan2(2 * spec.wheelbase * Math.sin(alpha), dist);
-    // yaw-rate damping against oscillation at speed
-    const desiredYaw = (vAbs * Math.tan(delta)) / spec.wheelbase;
-    delta += (desiredYaw - veh.yawRate) * 0.02 * Math.min(1, vAbs / 30);
+    // pure-pursuit curvature -> kinematic feedforward + yaw-rate feedback (active stability on loose cars)
+    const kappa = (2 * Math.sin(alpha)) / dist;
+    const rDes = vAbs * kappa;
+    const yawRate = veh.yawRate;
+    const rErr = rDes - yawRate;
+    const kr = 0.07 * THREE.MathUtils.clamp(vAbs / 20, 0.25, 1.6);
+    let delta = Math.atan(spec.wheelbase * kappa) + kr * rErr;
+    // oversteer measure: rotating faster than asked (same direction) or against the request
+    const overYaw = Math.sign(yawRate) === Math.sign(rDes) || Math.abs(rDes) < 0.03 ? Math.abs(yawRate) - Math.abs(rDes) : Math.abs(yawRate);
     let steer = -delta / this.maxSteerAt(v);
     // Stay just under full lock at speed: the vehicle reads a full-lock flick while sliding as drift intent.
     const steerLim = vAbs > 12 ? 0.84 : 1;
@@ -380,6 +385,13 @@ export class RacerAI {
     // spinning: braking hard makes it worse - ease off and let the countersteer catch it
     const spin = Math.abs(veh.bodySlip);
     if (spin > 0.2 && vAbs > 10) brake = Math.min(brake, THREE.MathUtils.clamp(0.6 - (spin - 0.2) * 2, 0.15, 0.6));
+    // oversteer: lift like a driver would (before the slide angle builds)
+    if (overYaw > 0.1 && vAbs > 10) throttle *= THREE.MathUtils.clamp(1 - (overYaw - 0.1) * 3.5, 0.1, 1);
+    // own traction control on the driven wheels: keep slip near the peak
+    let drivenSlip = 0;
+    for (const w of veh.wheels) if (w.driven && w.contact) drivenSlip = Math.max(drivenSlip, w.slipRatio);
+    const pk = spec.tireLong.peakSlip;
+    if (drivenSlip > pk * 1.05 && vAbs > 4) throttle *= THREE.MathUtils.clamp(1 - (drivenSlip - pk * 1.05) * 7, 0.3, 1);
     // sliding: feather the throttle early (RWD power oversteer), harder the further it steps out
     const slip = Math.abs(veh.bodySlip);
     if (slip > 0.07 && vAbs > 8) throttle *= THREE.MathUtils.clamp(1 - (slip - 0.07) * 4.5, 0.1, 1);

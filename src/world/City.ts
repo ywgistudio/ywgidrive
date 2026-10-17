@@ -48,6 +48,8 @@ export class City {
   readonly buildings: B[] = [];
   readonly facades: Facade[] = [];
   readonly roofTops: { pos: THREE.Vector3; w: number; d: number; yaw: number; h: number; sample: number }[] = [];
+  /** container yards in the docks (filled by props) */
+  readonly yards: { x: number; z: number; w: number; d: number; yaw: number; y: number }[] = [];
   private occ: Uint8Array;
   private ow: number;
   private oh: number;
@@ -65,6 +67,18 @@ export class City {
     this.frontRows();
     this.fill();
     this.skyline();
+  }
+
+  /** True if (x,z) is not covered by a building and is clear of the road walls by `clear` meters. */
+  free(x: number, z: number, clear = 1.5): boolean {
+    const k = this.occIdx(x, z);
+    if (k < 0 || this.occ[k]) return false;
+    return this.grid.clearance(x, z, clear + 20) > clear;
+  }
+
+  /** Reserve an area (used by props like container stacks). */
+  reserve(x: number, z: number, w: number, d: number, yaw: number) {
+    this.mark(x, z, w, d, yaw, 1);
   }
 
   private occIdx(x: number, z: number): number {
@@ -279,7 +293,15 @@ export class City {
         const big = zone === 'docks' ? 1.5 : zone === 'hills' ? 0.5 : 1;
         const w = r.range(14, 30) * big;
         const d = r.range(14, 30) * big;
+        const nearTrack = near.dist < 260;
+        if (nearTrack && zone === 'park' && r.chance(0.6)) continue; // leave room for trees
+        if (nearTrack && zone === 'hills' && r.chance(0.25)) continue;
         if (!this.fits(px, pz, w, d, yaw, 3)) continue;
+        if (nearTrack && zone === 'docks' && r.chance(0.5)) {
+          this.yards.push({ x: px, z: pz, w, d, yaw, y: this.terrain.height(px, pz) });
+          this.mark(px, pz, w, d, yaw, 1);
+          continue;
+        }
         const des = this.design(near.dist > 300 ? 'downtown' : zone, px, pz, false);
         // fade height a little with distance from the circuit so the skyline reads layered
         const y = this.baseY(px, pz, w, d, yaw);

@@ -77,6 +77,8 @@ export class Track {
   readonly nearLamps: Int32Array;
 
   readonly lanes = [-LANE_WIDTH * 1.5, -LANE_WIDTH * 0.5, LANE_WIDTH * 0.5, LANE_WIDTH * 1.5];
+  /** Arc length of the hill-crest jump lip (-1 if none). */
+  jumpS = -1;
 
   constructor() {
     const pts = CONTROL_POINTS.map((c) => new THREE.Vector3(c.x * TRACK_SCALE, c.y, c.z * TRACK_SCALE));
@@ -142,6 +144,37 @@ export class Track {
         let acc = 0;
         for (let k = -6; k <= 6; k++) acc += y2[(i + k + count) % count];
         this.py[i] = acc / 13;
+      }
+    }
+
+    // Hill-crest jump: find the summit in the hills and add a ramp kick so the road drops away
+    // after it (airtime above ~150 km/h).
+    {
+      let crest = -1;
+      let best = -Infinity;
+      for (let i = 0; i < count; i++) {
+        if (ZONES_ORDER[this.zone[i]] === 'hills' && this.py[i] > best) {
+          best = this.py[i];
+          crest = i;
+        }
+      }
+      if (crest >= 0) {
+        const rise = 50, fall = 46, h = 2.4, round = 3;
+        for (let k = -Math.ceil(rise / this.step) - 2; k <= Math.ceil(fall / this.step) + 2; k++) {
+          const d = k * this.step;
+          let y = 0;
+          if (d < 0) {
+            const t = 1 + d / rise; // 0..1 up the ramp
+            y = t <= 0 ? 0 : h * t * t * (2 - t); // eases in, steep at the lip
+          } else {
+            const t = d / fall;
+            y = t >= 1 ? 0 : h * (1 - t) * (1 - t) * (1 + 2 * t * 0.15);
+          }
+          // round the lip slightly so the suspension isn't hit by a hard kink
+          if (Math.abs(d) < round) y = Math.max(y, h * (1 - (d / round) ** 2 * 0.04));
+          this.py[(crest + k + count) % count] += y;
+        }
+        this.jumpS = crest * this.step;
       }
     }
 

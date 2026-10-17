@@ -18,6 +18,7 @@ renderer.setPixelRatio(1);
 renderer.setSize(window.innerWidth, window.innerHeight, false);
 renderer.toneMapping = THREE.NoToneMapping;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.info.autoReset = false;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x05060b);
@@ -56,7 +57,7 @@ function noiseTex(size: number, seed: number) {
 }
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(200, 200),
-  new THREE.MeshStandardMaterial({ color: 0x15161b, roughness: 1, roughnessMap: noiseTex(256, 7), metalness: 0, envMapIntensity: 0.8 }),
+  new THREE.MeshStandardMaterial({ color: 0x0a0a0d, roughness: 1, roughnessMap: noiseTex(256, 7), metalness: 0, envMapIntensity: 0.8 }),
 );
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
@@ -64,7 +65,7 @@ scene.add(ground);
 // streetlights
 const lampPositions = [new THREE.Vector3(-6, 7.5, -3), new THREE.Vector3(7, 7.5, 2), new THREE.Vector3(0, 7.5, 12), new THREE.Vector3(-14, 7.5, 8)];
 for (const p of lampPositions) {
-  const l = new THREE.PointLight(0xffc98a, 380, 40, 1.8);
+  const l = new THREE.PointLight(0xffc98a, 140, 40, 1.8);
   l.position.copy(p);
   scene.add(l);
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.2, 0.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 6, 3.5) }));
@@ -105,7 +106,7 @@ async function main() {
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const pm = new THREE.PMREMGenerator(renderer);
     scene.environment = pm.fromEquirectangular(hdr).texture;
-    scene.environmentIntensity = 0.45;
+    scene.environmentIntensity = 0.3;
   }
   const models = new CarModels('/assets/cars/');
   await models.load((p) => (info.textContent = `loading ${(p * 100) | 0}%`));
@@ -172,6 +173,7 @@ async function main() {
   const loop = () => {
     requestAnimationFrame(loop);
     if (params.get('spin')) for (const c of cars) c.o.rotation.y += 0.01;
+    renderer.info.reset();
     composer.render();
     frames++;
     if (frames === 8) {

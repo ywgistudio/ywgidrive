@@ -485,8 +485,8 @@ export class RaceGame {
   // ---------------------------------------------------------------- loop
   resize() {
     const w = window.innerWidth, h = window.innerHeight;
-    this.renderer.setSize(w, h, false);
-    this.post?.setSize(w, h);
+    if (this.post) this.post.setSize(w, h);
+    else this.renderer.setSize(w, h, false);
     this.chase.camera.aspect = w / h;
     this.chase.camera.updateProjectionMatrix();
   }
@@ -793,14 +793,14 @@ export class RaceGame {
         const w = v.wheels[i];
         const id = c.id * 4 + i;
         const inten = w.contact ? w.skid : 0;
-        this.effects.skid(id, w.point, w.normal, _right, c.spec.wheelWidth, inten > 0.12 ? inten : 0);
-        if (w.contact && inten > 0.3 && w.slideSpeed > 3) {
+        this.effects.skid(id, w.point, w.normal, _right, c.spec.wheelWidth, inten > 0.28 ? inten : 0);
+        if (w.contact && inten > 0.35 && w.slideSpeed > 4) {
           this.effects.tireSmoke(w.point, v.velocity, Math.min(1, inten * (w.slideSpeed / 12)));
         }
       }
       if (c.visual) {
         _m.compose(c.renderPos, c.renderQuat, _v.set(1, 1, 1));
-        this.effects.exhaust(c.id, _m, { localPos: c.visual.exhausts }, v.boosting, v.backfire > 0, v.throttleOut);
+        this.effects.exhaust(c.id, _m, { localPos: c.visual.exhausts }, v.boosting, v.backfire > 0, v.throttleOut, v.velocity);
       }
     }
   }
