@@ -27,6 +27,13 @@ export interface RacerAIOptions {
 }
 
 const G = 9.81;
+const SECTION = 25; // meters per adaptive speed section
+
+/**
+ * Per-car-model learned speed multipliers per track section. Shared by all AI using the same spec,
+ * so the field quickly learns where its car under/over-performs the analytic racing speed profile.
+ */
+const learned = new Map<string, Float32Array>();
 const _rear = new THREE.Vector3();
 const _tgt = new THREE.Vector3();
 const _d = new THREE.Vector3();
@@ -48,6 +55,8 @@ export class RacerAI {
   needsReset = false;
   /** Latest projection of the car onto the track. */
   readonly proj: Projection = { index: -1, s: 0, lateral: 0, height: 0 };
+  /** Telemetry for debugging/tuning. */
+  readonly debug = { vCmd: 0, latTarget: 0, avoid: 0, blocked: false };
 
   private gripMu: number;
   private avoid = 0; // lateral offset relative to the racing line (m)
@@ -71,6 +80,11 @@ export class RacerAI {
   private wobblePhase = Math.random() * 10;
   private nitroCooldown = 0;
   private lastSteer = 0;
+  private sectionMult: Float32Array;
+  private curSection = -1;
+  private secBad = 0;
+  private secLimited = false;
+  private secAvoided = false;
 
   constructor(vehicle: Vehicle, track: Track, opts: RacerAIOptions) {
     this.vehicle = vehicle;
@@ -80,8 +94,16 @@ export class RacerAI {
     this.laneBias = opts.laneBias ?? 0;
     // Effective usable lateral grip relative to the mu=1 racing speed profile.
     const spec = vehicle.spec;
-    const aeroBonus = (spec.clFront + spec.clRear) * 0.12;
-    this.gripMu = spec.tireLat.mu * 0.9 + aeroBonus;
+    const aeroBonus = (spec.clFront + spec.clRear) * 0.08;
+    // steady-state skidpad grip measures ~0.85-0.92 x peak mu; transients need some margin on top
+    this.gripMu = spec.tireLat.mu * 0.84 + aeroBonus;
+    const n = Math.ceil(track.length / SECTION);
+    let arr = learned.get(spec.id);
+    if (!arr || arr.length !== n) {
+      arr = new Float32Array(n).fill(1);
+      learned.set(spec.id, arr);
+    }
+    this.sectionMult = arr;
     // AI drives with stability aids on but less countersteer meddling than the player default.
     vehicle.assists = { abs: true, tcs: true, esc: true, steerAssist: 0.55, autoGear: true };
   }
@@ -107,7 +129,12 @@ export class RacerAI {
   /** Speed target at arc length s for this car (m/s). */
   speedTarget(s: number, rubberBand: number): number {
     const k = Math.sqrt(this.gripMu) * this.skill * (1 + 0.06 * THREE.MathUtils.clamp(rubberBand, -1, 1)) * this.mistakeSpeed;
-    return this.track.racingSpeedAt(s) * k;
+    const ss = this.track.wrapS(s) / SECTION;
+    const n = this.sectionMult.length;
+    const i0 = Math.floor(ss);
+    const f = ss - i0;
+    const m = this.sectionMult[i0 % n] * (1 - f) + this.sectionMult[(i0 + 1) % n] * f;
+    return this.track.racingSpeedAt(s) * k * m;
   }
 
   private maxSteerAt(v: number): number {
@@ -115,6 +142,48 @@ export class RacerAI {
     const vv = Math.max(Math.abs(v), 1);
     const gripSteer = Math.atan((spec.wheelbase * spec.tireLat.mu * G * 1.05) / (vv * vv)) + spec.tireLat.peakSlip * 1.1;
     return Math.min(spec.maxSteer, gripSteer);
+  }
+
+  /**
+   * Section-wise online adaptation of the speed profile. Penalises running wide (toward the outside
+   * of the corner or onto the curb) in a section and the braking sections before it; slowly rewards
+   * clean sections where the speed target was the limiting factor.
+   */
+  private learn(s: number, index: number, lat: number, vCmd: number, v: number, saturated: boolean, disturbed: boolean) {
+    const track = this.track;
+    const sec = Math.floor(track.wrapS(s) / SECTION);
+    const here = track.racingLineAt(s) + this.laneBias + this.avoid;
+    const ci = track.curvature[index];
+    const outward = Math.abs(ci) > 0.002 ? (ci > 0 ? here - lat : lat - here) : 0;
+    const edge = Math.abs(lat) + this.vehicle.spec.bodyHalf[0] - track.halfWidth;
+    let bad = 0;
+    if (v > 8) {
+      if (outward > 2.2) bad = Math.max(bad, outward > 3.5 ? 2 : 1);
+      if (edge > 0.15) bad = Math.max(bad, edge > 0.6 ? 2 : 1);
+      if (saturated && outward > 1.0 && v > 15) bad = Math.max(bad, 1);
+    }
+    if (sec !== this.curSection) {
+      if (this.curSection >= 0 && !this.secAvoided) {
+        const arr = this.sectionMult;
+        const n = arr.length;
+        if (this.secBad > 0) {
+          const dec = this.secBad > 1 ? 0.03 : 0.015;
+          for (let k = 0; k < 3; k++) {
+            const j = (this.curSection - k + n) % n;
+            arr[j] = Math.max(0.85, arr[j] - dec * (k === 0 ? 1 : 0.6));
+          }
+        } else if (this.secLimited) {
+          arr[this.curSection] = Math.min(1.12, arr[this.curSection] + 0.005);
+        }
+      }
+      this.curSection = sec;
+      this.secBad = 0;
+      this.secLimited = false;
+      this.secAvoided = false;
+    }
+    if (disturbed) this.secAvoided = true;
+    this.secBad = Math.max(this.secBad, bad);
+    if (v > 8 && vCmd < v + 1.0) this.secLimited = true;
   }
 
   update(dt: number, ctx: AIContext) {
@@ -270,7 +339,9 @@ export class RacerAI {
     const desiredYaw = (vAbs * Math.tan(delta)) / spec.wheelbase;
     delta += (desiredYaw - veh.yawRate) * 0.02 * Math.min(1, vAbs / 30);
     let steer = -delta / this.maxSteerAt(v);
-    steer = THREE.MathUtils.clamp(steer, -1, 1);
+    // Stay just under full lock at speed: the vehicle reads a full-lock flick while sliding as drift intent.
+    const steerLim = vAbs > 12 ? 0.84 : 1;
+    steer = THREE.MathUtils.clamp(steer, -steerLim, steerLim);
 
     // ---------- speed control ----------
     const lead = Math.max(0, v) * 0.32 + 3;
@@ -284,9 +355,14 @@ export class RacerAI {
     }
     vCmd = Math.min(vCmd, blockSpeed);
     // tight steering at speed = understeer risk: ease off
-    if (Math.abs(steer) > 0.92 && vAbs > 15) vCmd = Math.min(vCmd, vAbs - 1.5);
+    if (Math.abs(steer) > 0.82 && vAbs > 15) vCmd = Math.min(vCmd, vAbs - 1.5);
 
     const err = vCmd - v;
+    this.debug.vCmd = vCmd;
+    this.debug.latTarget = latT;
+    this.debug.avoid = this.avoid;
+    this.debug.blocked = urgent !== null;
+    this.learn(s, p.index, p.lateral, vCmd, v, Math.abs(steer) > 0.82, urgent !== null || Math.abs(this.avoid) > 0.5 || this.mistakeLat !== 0);
     this.integ = THREE.MathUtils.clamp(this.integ + err * dt * 0.5, -0.4, 0.4);
     let u = err * 0.32 + this.integ;
     if (err > 2.5) u = 1;

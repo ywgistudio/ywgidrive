@@ -8,14 +8,16 @@ import { markRange } from './Smoke';
 const vert = /* glsl */ `
 attribute vec4 aP0; // xyz, spawn time
 attribute vec4 aV0; // xyz, life
-attribute vec2 aParams; // x seed, y brightness
+attribute vec3 aParams; // x seed, y brightness, z hue (0 fire, 1 nitro blue)
 uniform float uTime;
 uniform float uStreak;
 uniform float uWidth;
 varying float vT;
 varying float vB;
 varying float vAcross;
+varying float vHue;
 void main() {
+  vHue = aParams.z;
   float age = uTime - aP0.w;
   float t = age / aV0.w;
   if (t < 0.0 || t > 1.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vT = 1.0; vB = 0.0; return; }
@@ -42,11 +44,13 @@ const frag = /* glsl */ `
 varying float vT;
 varying float vB;
 varying float vAcross;
+varying float vHue;
 void main() {
   float core = 1.0 - abs(vAcross);
   vec3 hot = vec3(7.0, 5.2, 3.2);
   vec3 cool = vec3(4.5, 1.1, 0.15);
-  vec3 c = mix(hot, cool, smoothstep(0.0, 0.7, vT)) * vB;
+  vec3 c = mix(hot, cool, smoothstep(0.0, 0.7, vT));
+  c = mix(c, mix(vec3(3.0, 4.5, 9.0), vec3(0.3, 0.9, 6.0), smoothstep(0.0, 0.6, vT)), vHue) * vB;
   float a = core * (1.0 - vT * vT);
   gl_FragColor = vec4(c * a, 1.0);
 }
@@ -65,8 +69,8 @@ export class Sparks {
   private time = 0;
   readonly uniforms = {
     uTime: { value: 0 },
-    uStreak: { value: 0.03 },
-    uWidth: { value: 0.022 },
+    uStreak: { value: 0.045 },
+    uWidth: { value: 0.028 },
   };
 
   constructor(max: number) {
@@ -78,7 +82,7 @@ export class Sparks {
     g.setIndex([0, 1, 2, 1, 3, 2]);
     this.p0 = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4).setUsage(THREE.DynamicDrawUsage);
     this.v0 = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4).setUsage(THREE.DynamicDrawUsage);
-    this.params = new THREE.InstancedBufferAttribute(new Float32Array(max * 2), 2).setUsage(THREE.DynamicDrawUsage);
+    this.params = new THREE.InstancedBufferAttribute(new Float32Array(max * 3), 3).setUsage(THREE.DynamicDrawUsage);
     // start everything dead
     const p = this.p0.array as Float32Array;
     const v = this.v0.array as Float32Array;
@@ -105,7 +109,7 @@ export class Sparks {
     this.mesh.renderOrder = 6;
   }
 
-  spawn(px: number, py: number, pz: number, vx: number, vy: number, vz: number, life: number, brightness: number) {
+  spawn(px: number, py: number, pz: number, vx: number, vy: number, vz: number, life: number, brightness: number, hue = 0) {
     const i = this.head;
     this.head = (this.head + 1) % this.max;
     const p = this.p0.array as Float32Array;
@@ -113,8 +117,9 @@ export class Sparks {
     const pr = this.params.array as Float32Array;
     p[i * 4] = px; p[i * 4 + 1] = py; p[i * 4 + 2] = pz; p[i * 4 + 3] = this.time;
     v[i * 4] = vx; v[i * 4 + 1] = vy; v[i * 4 + 2] = vz; v[i * 4 + 3] = life;
-    pr[i * 2] = Math.random();
-    pr[i * 2 + 1] = brightness;
+    pr[i * 3] = Math.random();
+    pr[i * 3 + 1] = brightness;
+    pr[i * 3 + 2] = hue;
     if (this.lo < 0) this.lo = this.hi = i;
     else if (i === 0) this.lo = 0;
     else this.hi = Math.max(this.hi, i);
@@ -126,7 +131,7 @@ export class Sparks {
     if (this.lo >= 0) {
       markRange(this.p0, this.lo, this.hi, this.max, 4);
       markRange(this.v0, this.lo, this.hi, this.max, 4);
-      markRange(this.params, this.lo, this.hi, this.max, 2);
+      markRange(this.params, this.lo, this.hi, this.max, 3);
       this.lo = this.hi = -1;
     }
   }

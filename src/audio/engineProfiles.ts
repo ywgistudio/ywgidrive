@@ -148,7 +148,7 @@ export function cycleFreq(rpm: number): number {
 }
 
 /** Render one engine cycle into `size` samples (range roughly -1..1). */
-export function renderCycle(p: EngineProfile, size = 2048): Float32Array {
+export function renderCycle(p: EngineProfile, size = 2048): Float32Array<ArrayBuffer> {
   const w = new Float32Array(size);
   const spacing = 1 / p.pulses;
   const width = spacing * p.pulseWidth;
@@ -180,7 +180,7 @@ export function renderCycle(p: EngineProfile, size = 2048): Float32Array {
 }
 
 /** DFT of the cycle into PeriodicWave coefficient arrays (index 0 = DC, ignored). */
-export function cycleCoefficients(p: EngineProfile, harmonics = 160): { real: Float32Array; imag: Float32Array } {
+export function cycleCoefficients(p: EngineProfile, harmonics = 160): { real: Float32Array<ArrayBuffer>; imag: Float32Array<ArrayBuffer> } {
   const size = 2048;
   const w = renderCycle(p, size);
   const real = new Float32Array(harmonics + 1);
@@ -200,7 +200,7 @@ export function cycleCoefficients(p: EngineProfile, harmonics = 160): { real: Fl
 }
 
 /** tanh soft-clip transfer curve for WaveShaperNode. */
-export function tanhCurve(samples = 2048, k = 1): Float32Array {
+export function tanhCurve(samples = 2048, k = 1): Float32Array<ArrayBuffer> {
   const c = new Float32Array(samples);
   const norm = Math.tanh(k);
   for (let i = 0; i < samples; i++) {

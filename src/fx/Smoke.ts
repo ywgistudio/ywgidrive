@@ -24,6 +24,8 @@ void main() {
   vec3 center = aP0.xyz + disp;
   float grow = 1.0 - (1.0 - t) * (1.0 - t);
   float size = mix(aParams.x, aParams.y, grow);
+  // keep the billboard from slicing into the road (no depth-soft particles available)
+  center.y = max(center.y, aP0.y - 0.2 + size * 0.42);
   vec4 mv = viewMatrix * vec4(center, 1.0);
   float ang = aParams.z * 6.2831 + age * (aParams.z - 0.5) * 1.6;
   float c = cos(ang), s = sin(ang);
@@ -36,7 +38,7 @@ void main() {
   float fadeOut = pow(1.0 - t, 1.6);
   float nearFade = smoothstep(0.6, 2.6, -mv.z);
   vAlpha = aParams.w * fadeIn * fadeOut * nearFade;
-  vLight = 0.85 + 0.25 * (1.0 - t);
+  vLight = (0.85 + 0.25 * (1.0 - t)) * (0.78 + 0.44 * fract(aParams.z * 91.7));
 }
 `;
 
@@ -110,8 +112,8 @@ export class Smoke {
       uWind: { value: new THREE.Vector3(0.6, 0, 0.25) },
       uTex: { value: tex },
       uColor: { value: new THREE.Color(0.78, 0.8, 0.86) },
-      uLight: { value: new THREE.Color(0.55, 0.55, 0.6) },
-      uOpacity: { value: 0.6 },
+      uLight: { value: new THREE.Color(0.4, 0.41, 0.46) },
+      uOpacity: { value: 0.4 },
     };
     const mat = new THREE.ShaderMaterial({
       vertexShader: vert,
@@ -129,7 +131,7 @@ export class Smoke {
   /** Spawn rate ~ intensity * 60/s, distributed with an accumulator for frame-rate independence. */
   emit(pos: THREE.Vector3, vel: THREE.Vector3, intensity: number, dt: number) {
     if (intensity <= 0.01) return;
-    this.spawnAcc += intensity * 55 * dt;
+    this.spawnAcc += intensity * 42 * dt;
     while (this.spawnAcc >= 1) {
       this.spawnAcc -= 1;
       this.spawn(pos, vel, intensity);

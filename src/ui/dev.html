@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>UI dev harness</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,500;0,600;0,700;1,500;1,600;1,700&family=Orbitron:wght@500;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #07050f; }
+      #fake {
+        position: fixed; inset: 0;
+        background:
+          radial-gradient(40% 30% at 30% 70%, rgba(255, 160, 60, 0.55), transparent 70%),
+          radial-gradient(30% 25% at 70% 40%, rgba(60, 200, 255, 0.45), transparent 70%),
+          radial-gradient(25% 20% at 85% 80%, rgba(255, 40, 200, 0.5), transparent 70%),
+          linear-gradient(180deg, #0b0a1e 0%, #1a1530 55%, #2a2236 70%, #111018 100%);
+      }
+      body.bright #fake {
+        background:
+          radial-gradient(50% 40% at 60% 60%, #ffffff, transparent 70%),
+          radial-gradient(40% 30% at 20% 20%, #ffe8b0, transparent 70%),
+          linear-gradient(180deg, #c8d6ee 0%, #f0e8dd 60%, #8a8f9a 100%);
+      }
+      #ui { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+    </style>
+  </head>
+  <body>
+    <div id="fake"></div>
+    <div id="ui"></div>
+    <script type="module" src="./devMain.ts"></script>
+  </body>
+</html>

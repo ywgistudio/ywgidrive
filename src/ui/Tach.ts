@@ -133,10 +133,10 @@ export class Tach {
 
   private ledLayout() {
     const { cx, cy, r } = this.geometry();
-    const step = r * 0.13;
-    const lr = r * 0.042;
+    const step = r * 0.105;
+    const lr = r * 0.038;
     const x0 = cx - (step * (LEDS - 1)) / 2;
-    const ly = cy - r * 0.6;
+    const ly = cy - r * 0.42;
     return { x0, ly, step, lr };
   }
 

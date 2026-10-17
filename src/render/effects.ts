@@ -75,7 +75,7 @@ void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor)
   c = mix(vec3(l), c, saturation);
   c *= tint;
   c += lift * (1.0 - smoothstep(0.0, 0.25, l));
-  c += flashColor * flash;
+  c = c * (1.0 + flash * 1.6) + flashColor * flash * 0.012;
   c *= 1.0 - dim;
   outputColor = vec4(max(c, vec3(0.0)), inputColor.a);
 }

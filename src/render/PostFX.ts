@@ -84,7 +84,7 @@ export class PostFX {
     this.radial = new RadialBlurEffect();
     this.grade = new GradeEffect();
     this.grade.u<number>('exposure').value = this.exposure;
-    this.grain = new GrainEffect(0.03);
+    this.grain = new GrainEffect(0.016);
     this.ca = new ChromaticAberrationEffect({ offset: new THREE.Vector2(0, 0), radialModulation: true, modulationOffset: 0.3 });
     this.tone = new ToneMappingEffect({ mode: ToneMappingMode.AGX });
     this.vignette = new VignetteEffect({ offset: 0.32, darkness: 0.55 });
@@ -171,7 +171,7 @@ export class PostFX {
     // grade: nitro blue push, impact flash, menu dim/desat
     const tint = this.grade.u<THREE.Vector3>('tint').value;
     tint.set(1 - this.nitro * 0.08, 1 - this.nitro * 0.02, 1 + this.nitro * (0.12 + 0.05 * pulse));
-    this.grade.u<number>('flash').value = imp * imp * 0.22;
+    this.grade.u<number>('flash').value = imp * imp * 0.5;
     this.grade.u<number>('dim').value = this.menu * 0.35;
     this.grade.u<number>('saturation').value = 1.08 - this.menu * 0.35 + this.nitro * 0.06;
 

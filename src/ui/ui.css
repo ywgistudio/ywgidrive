@@ -21,7 +21,7 @@
   --font-label: 'Chakra Petch', 'Rajdhani', system-ui, sans-serif;
   --skew: -12deg;
   --hud-pad: clamp(10px, 2.2vmin, 28px);
-  --shadow-text: 0 1px 0 rgba(0, 0, 0, 0.6), 0 0 12px rgba(0, 0, 0, 0.55);
+  --shadow-text: 0 1px 0 rgba(0, 0, 0, 0.6), 0 0 3px rgba(0, 0, 0, 0.8), 0 0 12px rgba(0, 0, 0, 0.55);
 }
 
 #ui {
@@ -135,6 +135,10 @@
   animation: ui-fade-in 0.35s ease-out both;
 }
 
+.ui-menu > :not(.ui-backdrop) {
+  z-index: 1;
+}
+
 .ui-menu.is-leaving {
   animation: ui-fade-out 0.18s ease-in both;
   pointer-events: none;
@@ -143,6 +147,7 @@
 .ui-backdrop {
   position: absolute;
   inset: 0;
+  z-index: 0;
   background:
     radial-gradient(120% 80% at 75% 120%, rgba(255, 43, 214, 0.22), transparent 60%),
     radial-gradient(90% 70% at 10% -10%, rgba(33, 230, 255, 0.16), transparent 60%),
@@ -201,6 +206,20 @@
   pointer-events: none;
 }
 
+.ui-backdrop.streaks-right .ui-streaks {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, transparent 42%, #000 68%);
+  mask-image: linear-gradient(90deg, transparent 0%, transparent 42%, #000 68%);
+}
+
+.ui-backdrop.streaks-title .ui-streaks {
+  -webkit-mask-image: radial-gradient(ellipse 48% 34% at 50% 50%, transparent 70%, #000 100%);
+  mask-image: radial-gradient(ellipse 48% 34% at 50% 50%, transparent 70%, #000 100%);
+}
+
+.ui-backdrop.streaks-none .ui-streaks {
+  display: none;
+}
+
 .ui-streaks i {
   position: absolute;
   height: 2px;
@@ -209,7 +228,7 @@
   border-radius: 2px;
   background: linear-gradient(90deg, transparent, var(--cyan), #fff);
   filter: drop-shadow(0 0 6px var(--cyan));
-  opacity: 0.7;
+  opacity: 0.5;
   animation: ui-streak 2.8s linear infinite;
 }
 
@@ -494,6 +513,36 @@
   font-size: 0.9em;
 }
 
+.ui-panel.is-settings {
+  width: min(1060px, calc(100vw - 36px));
+  top: 50%;
+}
+
+.ui-cols {
+  display: flex;
+  gap: 8px 34px;
+  flex-wrap: wrap;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 18px 4px 4px;
+  margin-right: -18px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--pink-soft) transparent;
+}
+
+.ui-cols > .ui-list {
+  flex: 1 1 420px;
+  overflow: visible;
+  padding: 0;
+  margin: 0;
+  gap: 7px;
+}
+
+.ui-panel.is-settings > .ui-list {
+  margin-top: 16px;
+  max-width: 300px;
+}
+
 .ui-section {
   margin: 10px 0 0 6px;
   font-size: 11px;
@@ -626,14 +675,18 @@
 
 .ui-carsel-arrows {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  display: flex;
-  justify-content: space-between;
-  padding: 0 clamp(8px, 3vw, 40px);
-  transform: translateY(-50%);
+  inset: 0;
   pointer-events: none;
+}
+
+.ui-carsel-arrows .ui-arrow {
+  position: absolute;
+  top: 50%;
+  margin-top: calc(clamp(44px, 6vmin, 64px) / -2);
+}
+
+.ui-carsel-arrows .ui-arrow:last-child {
+  right: clamp(8px, 3vw, 40px);
 }
 
 .ui-arrow {
@@ -664,8 +717,8 @@
   transform: skewX(var(--skew)) scale(0.9);
 }
 
-.ui-carsel-left {
-  margin-left: min(440px, 40vw);
+.ui-carsel-arrows .ui-carsel-left {
+  left: calc(clamp(18px, 6vw, 100px) + min(400px, 100vw - 36px) + 28px);
 }
 
 .ui-carsel-dots {
@@ -885,6 +938,20 @@
   opacity: 1;
 }
 
+/* soft corner shading so HUD text stays legible over bright frames (headlights, bloom) */
+.ui-hud::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 30vmax 22vmax at 0% 0%, rgba(4, 3, 12, 0.55), transparent 70%),
+    radial-gradient(ellipse 30vmax 22vmax at 100% 0%, rgba(4, 3, 12, 0.55), transparent 70%),
+    radial-gradient(ellipse 26vmax 14vmax at 50% 0%, rgba(4, 3, 12, 0.35), transparent 70%),
+    radial-gradient(ellipse 26vmax 26vmax at 0% 100%, rgba(4, 3, 12, 0.45), transparent 70%),
+    radial-gradient(ellipse 30vmax 28vmax at 100% 100%, rgba(4, 3, 12, 0.55), transparent 70%);
+  pointer-events: none;
+}
+
 .hud-glass {
   background: linear-gradient(135deg, rgba(9, 7, 22, 0.62), rgba(9, 7, 22, 0.36));
   border: 1px solid var(--line);
@@ -924,24 +991,24 @@
 
 .hud-pos-num {
   font-size: clamp(54px, 11vmin, 116px);
-  background: linear-gradient(180deg, #fff 30%, #c9f6ff 60%, var(--cyan));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  filter: drop-shadow(0 0 14px rgba(33, 230, 255, 0.45)) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.6));
+  color: #ffffff;
+  text-shadow: 0 0 18px rgba(33, 230, 255, 0.6), 0 0 2px rgba(33, 230, 255, 0.9), 0 3px 0 rgba(0, 0, 0, 0.55);
 }
 
 .hud-pos-num.is-first {
-  background: linear-gradient(180deg, #fff 25%, #ffe08a 55%, var(--amber));
-  -webkit-background-clip: text;
-  background-clip: text;
-  filter: drop-shadow(0 0 16px rgba(255, 176, 32, 0.55)) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.6));
+  color: #fff3d1;
+  text-shadow: 0 0 20px rgba(255, 176, 32, 0.75), 0 0 2px rgba(255, 176, 32, 0.9), 0 3px 0 rgba(0, 0, 0, 0.55);
 }
 
 .hud-pos-sfx {
   font-size: clamp(16px, 3vmin, 30px);
   margin-top: 0.3em;
   color: var(--text);
+}
+
+.hud-pos-sfx,
+.hud-pos-total {
+  text-shadow: var(--shadow-text);
 }
 
 .hud-pos-total {
@@ -1019,6 +1086,8 @@
 }
 
 .hud-time {
+  padding: 0 4px 0 30px;
+  background: linear-gradient(270deg, rgba(9, 7, 22, 0.6), rgba(9, 7, 22, 0));
   font-family: var(--font-display);
   font-weight: 800;
   font-style: italic;
@@ -1063,6 +1132,8 @@
 }
 
 .hud-style {
+  padding: 4px 16px;
+  background: linear-gradient(90deg, rgba(9, 7, 22, 0), rgba(9, 7, 22, 0.6) 20%, rgba(9, 7, 22, 0.6) 80%, rgba(9, 7, 22, 0));
   position: absolute;
   top: max(var(--hud-pad), env(safe-area-inset-top));
   left: 50%;
@@ -1085,6 +1156,8 @@
 
 /* drift combo */
 .hud-drift {
+  padding: 4px 34px 6px;
+  background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(5, 3, 14, 0.62), rgba(5, 3, 14, 0) 100%);
   position: absolute;
   top: calc(max(var(--hud-pad), env(safe-area-inset-top)) + clamp(30px, 5vmin, 46px));
   left: 50%;
@@ -1118,6 +1191,7 @@
 }
 
 .hud-drift-title {
+  text-transform: uppercase;
   font-size: clamp(15px, 2.4vmin, 22px);
   letter-spacing: 0.18em;
   color: var(--pink);
@@ -1169,6 +1243,7 @@
   position: relative;
   width: 100%;
   aspect-ratio: 1 / 0.86;
+  container-type: inline-size;
 }
 
 .hud-tach canvas {
@@ -1182,7 +1257,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  top: 40%;
+  top: 36.5cqw;
   text-align: center;
   font-family: var(--font-display);
   font-weight: 900;
@@ -1193,17 +1268,17 @@
 
 .hud-speed-num {
   display: block;
-  font-size: clamp(34px, 8.4vmin, 82px);
+  font-size: 19cqw;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
 }
 
 .hud-speed-unit {
   display: block;
-  margin-top: 0.25em;
+  margin-top: 1.2cqw;
   font-family: var(--font-label);
   font-style: normal;
-  font-size: clamp(9px, 1.3vmin, 12px);
+  font-size: max(9px, 3.6cqw);
   font-weight: 700;
   letter-spacing: 0.4em;
   padding-left: 0.4em;
@@ -1212,16 +1287,16 @@
 
 .hud-gear {
   position: absolute;
-  right: 6%;
-  bottom: 2%;
-  width: 24%;
-  aspect-ratio: 1;
+  left: 41cqw;
+  top: 68cqw;
+  width: 18cqw;
+  height: 16cqw;
   display: grid;
   place-items: center;
   font-family: var(--font-display);
   font-style: italic;
   font-weight: 900;
-  font-size: clamp(22px, 5vmin, 48px);
+  font-size: 10.5cqw;
   transform: skewX(var(--skew));
   border: 1px solid var(--line-strong);
   background: rgba(9, 7, 22, 0.66);
@@ -1576,12 +1651,16 @@
     margin: 12px 0;
   }
 
-  .ui-carsel-left {
-    margin-left: 0;
+  .ui-carsel-arrows .ui-arrow {
+    top: 64%;
   }
 
-  .ui-carsel-arrows {
-    top: 62%;
+  .ui-carsel-arrows .ui-carsel-left {
+    left: 12px;
+  }
+
+  .ui-carsel-arrows .ui-arrow:last-child {
+    right: 12px;
   }
 
   .ui-carsel-actions {
@@ -1590,6 +1669,10 @@
     width: auto;
     bottom: 22px;
     flex-direction: row;
+  }
+
+  .ui-carsel-actions .ui-btn-sub {
+    display: none;
   }
 
   .ui-carsel-actions .ui-btn.is-focused {
