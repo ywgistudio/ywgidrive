@@ -32,14 +32,21 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const KEY = 'ywgidrive.settings.v1';
 
+function defaultsForDevice(): Settings {
+  const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+  // phones/tablets: lighter render settings and a smaller grid
+  return touch ? { ...DEFAULT_SETTINGS, quality: 'low', opponents: 4, traffic: 'light' } : { ...DEFAULT_SETTINGS };
+}
+
 export function loadSettings(): Settings {
+  const base = defaultsForDevice();
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    if (raw) return { ...base, ...JSON.parse(raw) };
   } catch {
     /* storage unavailable */
   }
-  return { ...DEFAULT_SETTINGS };
+  return base;
 }
 
 export function saveSettings(s: Settings) {
@@ -65,7 +72,7 @@ export interface QualityProfile {
 }
 
 export const QUALITY: Record<Quality, QualityProfile> = {
-  low: { pixelRatio: 0.75, bloom: false, smaa: false, shadows: false, envCubeSize: 0, envCubeEvery: 0, buildingDensity: 0.45, particles: 0.4, drawDistance: 900, dynamicLamps: 2 },
+  low: { pixelRatio: 1, bloom: false, smaa: false, shadows: false, envCubeSize: 0, envCubeEvery: 0, buildingDensity: 0.45, particles: 0.4, drawDistance: 900, dynamicLamps: 2 },
   medium: { pixelRatio: 1, bloom: true, smaa: true, shadows: false, envCubeSize: 64, envCubeEvery: 6, buildingDensity: 0.7, particles: 0.7, drawDistance: 1300, dynamicLamps: 4 },
   high: { pixelRatio: 1.5, bloom: true, smaa: true, shadows: true, envCubeSize: 128, envCubeEvery: 3, buildingDensity: 1, particles: 1, drawDistance: 1800, dynamicLamps: 6 },
   ultra: { pixelRatio: 2, bloom: true, smaa: true, shadows: true, envCubeSize: 256, envCubeEvery: 2, buildingDensity: 1, particles: 1.4, drawDistance: 2400, dynamicLamps: 8 },

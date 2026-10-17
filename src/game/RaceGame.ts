@@ -17,6 +17,7 @@ import { PostFX } from '../render/PostFX';
 import { Effects } from '../fx/Effects';
 import { UI, type HudData, type ResultRow } from '../ui/UI';
 import { Credits } from '../ui/Credits';
+import { TouchControls, isTouchDevice } from '../ui/TouchControls';
 import { AudioSystem, type VehicleSound } from '../audio/AudioSystem';
 import { RacerAI, type AIObstacle } from '../ai/RacerAI';
 import { Traffic, type TrafficCarKind } from '../ai/Traffic';
@@ -75,6 +76,7 @@ export class RaceGame {
   effects!: Effects;
   ui!: UI;
   credits!: Credits;
+  touch: TouchControls | null = null;
   audio = new AudioSystem();
   input = new Input();
   chase!: ChaseCamera;
@@ -151,6 +153,14 @@ export class RaceGame {
       'Environment: Poly Haven and ambientCG (CC0) textures and HDRIs.',
     ]);
     this.credits.showButton(false);
+    if (isTouchDevice()) {
+      this.touch = new TouchControls(this.uiRoot, this.input);
+      this.touch.onPause = () => this.pause();
+      this.touch.onCamera = () => this.chase.cycle();
+      this.touch.onReset = () => {
+        if (this.player && this.race?.started && !this.player.racer?.finished) this.resetCar(this.player);
+      };
+    }
     prog(0.92, 'Tuning the lights');
     this.lampPool = new LampPool(this.scene, this.track, q.dynamicLamps);
     this.effects = new Effects(this.scene, q);
@@ -192,6 +202,7 @@ export class RaceGame {
   // ---------------------------------------------------------------- menus
   private goMenu() {
     this.mode = 'menu';
+    this.touch?.show(false);
     this.credits.showButton(true);
     this.clearRace();
     this.placeMenuCar(this.selectedCar);
@@ -374,6 +385,7 @@ export class RaceGame {
     };
     this.env.setStartLights(0);
     this.mode = 'race';
+    this.touch?.show(true);
     this.ui.hideMenus();
     this.ui.showHud(true);
     this.ui.setFps(s.showFps ? 0 : null);
@@ -446,6 +458,7 @@ export class RaceGame {
   pause() {
     if (this.mode !== 'race') return;
     this.mode = 'paused';
+    this.touch?.show(false);
     this.post.setMenuMode(true);
     this.audio.setMenuMode(true);
     this.ui.showPause({
@@ -466,6 +479,8 @@ export class RaceGame {
 
   resume() {
     this.mode = 'race';
+    this.touch?.show(true);
+    this.pauseGuard = this.time + 0.3;
     this.ui.hideMenus();
     this.post.setMenuMode(false);
     this.audio.setMenuMode(false);
@@ -475,6 +490,7 @@ export class RaceGame {
   private showResults() {
     const race = this.race!;
     this.mode = 'results';
+    this.touch?.show(false);
     // estimate finish times for unfinished racers
     const L = this.track.length * race.laps;
     const rows: ResultRow[] = race.standings.map((r) => {
@@ -581,7 +597,7 @@ export class RaceGame {
     const race = this.race!;
     const P = this.player!;
     const inp = this.input;
-    if (inp.consume('pause')) {
+    if (inp.consume('pause') && this.time > this.pauseGuard) {
       this.pause();
       return;
     }
@@ -743,6 +759,7 @@ export class RaceGame {
     this.syncAudio();
   }
   private _wasBoost = false;
+  private pauseGuard = 0;
 
   private handleContacts(): boolean {
     let playerCrash = false;
