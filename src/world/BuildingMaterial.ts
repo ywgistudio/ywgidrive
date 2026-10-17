@@ -49,10 +49,10 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
         flat varying vec4 vSeed;
         ${GLSL_NOISE}
         vec3 winPalette(float h, float hue) {
-          vec3 warm = vec3(1.0, 0.66, 0.36);
-          vec3 warm2 = vec3(1.0, 0.82, 0.55);
-          vec3 cool = vec3(0.62, 0.78, 1.0);
-          vec3 fluo = vec3(0.8, 1.0, 0.86);
+          vec3 warm = vec3(1.0, 0.5, 0.2);
+          vec3 warm2 = vec3(1.0, 0.68, 0.38);
+          vec3 cool = vec3(0.5, 0.66, 1.0);
+          vec3 fluo = vec3(0.7, 0.95, 0.8);
           vec3 c = h < 0.4 ? warm : (h < 0.65 ? warm2 : (h < 0.85 ? fluo : cool));
           return mix(c, cool, hue * 0.6);
         }
@@ -97,7 +97,7 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
             vec2 aa = fwidth(cellF) * 1.2;
             float lod = smoothstep(0.18, 0.5, max(aa.x, aa.y));
             float far = smoothstep(0.6, 1.4, max(aa.x, aa.y));
-            vec2 lo = style < 0.5 ? vec2(0.14, 0.24) : (style < 1.5 ? vec2(0.05, 0.08) : (style < 2.5 ? vec2(0.24, 0.28) : (style < 3.5 ? vec2(0.3, 0.55) : vec2(0.25, 0.3))));
+            vec2 lo = style < 0.5 ? vec2(0.2, 0.3) : (style < 1.5 ? vec2(0.05, 0.08) : (style < 2.5 ? vec2(0.24, 0.28) : (style < 3.5 ? vec2(0.3, 0.55) : vec2(0.25, 0.3))));
             vec2 hi = vec2(1.0) - lo * vec2(1.0, style < 1.5 ? 0.6 : 0.9);
             float area = (hi.x - lo.x) * (hi.y - lo.y);
             float win = mix(rect(cf, lo, hi, aa), area, lod);
@@ -108,7 +108,10 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
             float litFrac = vStyle.z;
             float lit = step(hw, litFrac * (0.55 + hf * 0.9));
             if (style > 3.5 && style < 4.5) lit *= step(0.35, hf);
-            float inten = (0.8 + 1.8 * wHash12(ci * 1.7 + seed)) * (0.65 + 0.5 * cf.y);
+            float inten = (0.35 + 1.1 * pow(wHash12(ci * 1.7 + seed), 2.0)) * (0.6 + 0.55 * cf.y);
+            // blinds: horizontal slats on some windows
+            float blinds = step(0.7, wHash12(ci * 2.3 + seed * 5.0));
+            inten *= mix(1.0, 0.55 + 0.45 * step(0.5, fract(cf.y * 9.0)), blinds * (1.0 - lod));
             vec3 wc = winPalette(wHash12(ci + seed * 3.0 + 0.5), vStyle.y);
             // TVs / flicker
             float tv = step(0.985, wHash12(ci * 3.1 + seed));
@@ -116,7 +119,7 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
             // distance fallback: average glow so far towers don't shimmer
             float avgLit = litFrac * 0.75;
             vec3 avgCol = winPalette(0.5, vStyle.y);
-            vec3 glow = mix(wc * inten * lit, avgCol * 1.35 * avgLit, far);
+            vec3 glow = mix(wc * inten * lit, avgCol * 0.75 * avgLit, far);
             float winMask = win * aboveGround;
             if (style > 0.5 && style < 1.5) {
               // glass curtain wall: dark reflective glass everywhere, mullions
@@ -127,7 +130,7 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
               alb = mix(wallTint, vec3(0.012, 0.014, 0.02), winMask);
               bRough = mix(0.9, 0.08, winMask);
             }
-            bEmisCol += glow * winMask * 1.6;
+            bEmisCol += glow * winMask * 0.75;
             // ground floor shopfront
             if (fc.y < gh) {
               if (vStyle.w > 0.5) {
@@ -138,7 +141,7 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
                 vec3 shopC = shopH < 0.5 ? vec3(1.0, 0.85, 0.65) : (shopH < 0.75 ? vec3(0.85, 0.95, 1.0) : (shopH < 0.9 ? vec3(1.0, 0.5, 0.75) : vec3(0.5, 1.0, 0.85)));
                 float shopOn = step(0.18, shopH);
                 float grad = 0.6 + 0.4 * smoothstep(0.2, 3.2, fc.y);
-                bEmisCol += shopC * glass * shopOn * (2.2 + 2.0 * shopH) * grad;
+                bEmisCol += shopC * glass * shopOn * (0.7 + 1.1 * shopH) * grad;
                 alb = mix(vec3(0.02), vec3(0.02, 0.02, 0.025), glass);
                 bRough = mix(0.6, 0.1, glass);
                 // awning / sign band

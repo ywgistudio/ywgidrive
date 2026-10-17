@@ -57,7 +57,7 @@ function noiseTex(size: number, seed: number) {
 }
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(200, 200),
-  new THREE.MeshStandardMaterial({ color: 0x0a0a0d, roughness: 1, roughnessMap: noiseTex(256, 7), metalness: 0, envMapIntensity: 0.8 }),
+  new THREE.MeshStandardMaterial({ color: 0x050506, roughness: 1, roughnessMap: noiseTex(256, 7), metalness: 0, envMapIntensity: 0.8 }),
 );
 ground.rotation.x = -Math.PI / 2;
 scene.add(ground);
@@ -65,7 +65,7 @@ scene.add(ground);
 // streetlights
 const lampPositions = [new THREE.Vector3(-6, 7.5, -3), new THREE.Vector3(7, 7.5, 2), new THREE.Vector3(0, 7.5, 12), new THREE.Vector3(-14, 7.5, 8)];
 for (const p of lampPositions) {
-  const l = new THREE.PointLight(0xffc98a, 140, 40, 1.8);
+  const l = new THREE.PointLight(0xffc98a, 70, 40, 1.8);
   l.position.copy(p);
   scene.add(l);
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.2, 0.4), new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 6, 3.5) }));
@@ -106,11 +106,13 @@ async function main() {
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     const pm = new THREE.PMREMGenerator(renderer);
     scene.environment = pm.fromEquirectangular(hdr).texture;
-    scene.environmentIntensity = 0.3;
+    scene.environmentIntensity = Number(params.get('env') ?? '0.15');
   }
   const models = new CarModels('/assets/cars/');
   await models.load((p) => (info.textContent = `loading ${(p * 100) | 0}%`));
-  const sports = models.sports.filter((e) => !onlyId || e.id === onlyId);
+  let sports = models.sports.filter((e) => !onlyId || e.id === onlyId);
+  const dup = Number(params.get('dup') ?? '1');
+  if (dup > 1) sports = Array.from({ length: dup }, (_, i) => sports[i % sports.length]);
   const traffic = models.traffic.filter((e) => !onlyId || e.id === onlyId);
   const lines: string[] = [];
   const cars: { v: CarVisual | null; o: THREE.Object3D }[] = [];
@@ -119,14 +121,15 @@ async function main() {
     const spec = SPECS[i % SPECS.length];
     const v = new CarVisual(models, e, { paint: PAINTS[i % PAINTS.length], ...spec, player: i === 0, envMap: null });
     v.updateWheels(physCenters(spec), [steerParam, steerParam * 0.9, 0, 0], [0.3, 0.3, 0.3, 0.3]);
-    v.setLights({ brake: i % 2, reverse: false, headlights: true, nitro: false });
+    v.setLights({ brake: i % 2, reverse: i === 2, headlights: params.get('lights') !== '0', nitro: false });
+    if (params.get('lod')) v.setLodLevel(1);
     v.object.position.set((i - (sports.length - 1) / 2) * 3.2, spec.cgHeight, 0);
     v.object.rotation.y = view === 'lineup' ? 0.55 : 0;
     scene.add(v.object);
     cars.push({ v, o: v.object });
     const f = v.fit;
     lines.push(
-      `${e.id}: tris=${models.get(e.id)!.tris} wb=${f.modelWheelbase.toFixed(3)} (spec ${spec.wheelbase}) trackF=${f.modelTrackFront.toFixed(3)} trackR=${f.modelTrackRear.toFixed(3)} R=${f.modelWheelRadius.toFixed(3)} wheelScale=${f.wheelScale.toFixed(3)} half=${v.halfExtents.toArray().map((x) => x.toFixed(2))}`,
+      `${e.id}: tris=${models.get(e.id)!.tris} lod=${models.get(e.id)!.lodTris} wb=${f.modelWheelbase.toFixed(3)} (spec ${spec.wheelbase}) trackF=${f.modelTrackFront.toFixed(3)} trackR=${f.modelTrackRear.toFixed(3)} R=${f.modelWheelRadius.toFixed(3)} wheelScale=${f.wheelScale.toFixed(3)} half=${v.halfExtents.toArray().map((x) => x.toFixed(2))}`,
     );
   });
   traffic.forEach((e, i) => {
@@ -166,15 +169,20 @@ async function main() {
       camera.position.set(0, 3.2 + n * 0.3, 7 + n * 1.6);
       camera.lookAt(0, 0.4, -1.5);
   }
+  for (const e of sports.slice(0, 1)) {
+    const pm = models.get(e.id)!;
+    for (const p of pm.body) lines.push(`  ${p.role} ${p.material.name}: ${p.geometry.index!.count / 3} -> ${p.lod ? p.lod.index!.count / 3 : 'drop'}`);
+    for (const p of pm.wheels?.[0].parts ?? []) lines.push(`  wheel ${p.role} ${p.material.name}: ${p.geometry.index!.count / 3} -> ${p.lod ? p.lod.index!.count / 3 : 'drop'}`);
+  }
   info.textContent = lines.join('\n');
   console.log(lines.join('\n'));
 
   let frames = 0;
   const loop = () => {
-    requestAnimationFrame(loop);
+    if (frames < 10 || params.get('spin')) requestAnimationFrame(loop);
     if (params.get('spin')) for (const c of cars) c.o.rotation.y += 0.01;
     renderer.info.reset();
-    composer.render();
+    if (params.get('nopost')) { renderer.toneMapping = THREE.AgXToneMapping; renderer.render(scene, camera); } else composer.render();
     frames++;
     if (frames === 8) {
       (window as unknown as { __ready: boolean }).__ready = true;

@@ -178,6 +178,11 @@ export class CarVisual {
   private readonly glow: THREE.Mesh | null = null;
   private readonly glowMat: THREE.MeshBasicMaterial | null = null;
   private readonly bodyOffset = new THREE.Vector3();
+  private bodyMeshes!: THREE.Group;
+  private readonly hiGroups: THREE.Group[] = [];
+  private readonly loGroups: THREE.Group[] = [];
+  private lodLevel = -1;
+  private wheelLift = 0;
   private fittedZ = false;
   private time = Math.random() * 10;
 
@@ -201,7 +206,7 @@ export class CarVisual {
     });
     addFlakes(this.paintMat);
     this.headMat = new THREE.MeshStandardMaterial({ name: 'headlight', color: 0xffffff, emissive: 0xfff1df, emissiveIntensity: 10, roughness: 0.15, metalness: 0 });
-    this.tailMat = new THREE.MeshStandardMaterial({ name: 'taillight', color: 0x2a0000, emissive: 0xff1608, emissiveIntensity: 2.6, roughness: 0.25, metalness: 0 });
+    this.tailMat = new THREE.MeshStandardMaterial({ name: 'taillight', color: 0x1a0000, emissive: 0xff0400, emissiveIntensity: 1.8, roughness: 0.25, metalness: 0 });
     this.reverseMat = new THREE.MeshStandardMaterial({ name: 'reverse', color: 0x111111, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.3 });
     this.ownedMaterials.push(this.paintMat, this.headMat, this.tailMat, this.reverseMat);
 
@@ -222,26 +227,40 @@ export class CarVisual {
       }
     };
 
-    // ---- body
+    // ---- body (high detail + distance LOD share the same vertex buffers)
     this.object.add(this.body);
     const bodyMeshes = new THREE.Group();
+    this.bodyMeshes = bodyMeshes;
+    const hi = new THREE.Group();
+    const lo = new THREE.Group();
+    bodyMeshes.add(hi, lo);
     this.body.add(bodyMeshes);
     for (const part of pm.body) {
-      const mesh = new THREE.Mesh(part.geometry, roleMat(part));
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
+      const mat = roleMat(part);
+      const mesh = new THREE.Mesh(part.geometry, mat);
       if (part.role === 'glass') mesh.renderOrder = 1;
-      bodyMeshes.add(mesh);
+      hi.add(mesh);
       if (part.role === 'interior') this.interior.push(mesh);
+      if (part.lod) {
+        const lm = new THREE.Mesh(part.lod, mat);
+        if (part.role === 'glass') lm.renderOrder = 1;
+        lo.add(lm);
+      }
     }
+    this.hiGroups.push(hi);
+    this.loGroups.push(lo);
 
-    // ---- fit model to physics
+    // ---- fit model to physics: model ground on physics ground, axle midpoint on the physics axle midpoint
     const fw = opts.frontWeight ?? 0.53;
     const physMid = (opts.wheelbase * (1 - 2 * fw)) / 2;
     const R = opts.wheelRadius;
-    this.bodyOffset.set(0, R - opts.cgHeight - pm.wheelCenterY, physMid - pm.axleMidZ);
+    // keep the model's own wheel size unless it is far off (small radius mismatches read better than shrunken wheels)
+    const rawScale = pm.wheels ? R / pm.wheelRadius : 1;
+    const wheelScale = THREE.MathUtils.clamp(rawScale, 0.96, 1.04);
+    const visR = pm.wheelRadius * wheelScale;
+    this.wheelLift = pm.wheels ? visR - R : 0;
+    this.bodyOffset.set(0, visR - opts.cgHeight - pm.wheelCenterY, physMid - pm.axleMidZ);
     bodyMeshes.position.copy(this.bodyOffset);
-    const wheelScale = pm.wheels ? R / pm.wheelRadius : 1;
     this.fit = { modelWheelbase: pm.wheelbase, modelTrackFront: pm.trackFront, modelTrackRear: pm.trackRear, modelWheelRadius: pm.wheelRadius, wheelScale };
 
     // ---- wheels
@@ -250,7 +269,16 @@ export class CarVisual {
         const pivot = new THREE.Group();
         const spin = new THREE.Group();
         spin.scale.setScalar(wheelScale);
-        for (const part of w.parts) spin.add(new THREE.Mesh(part.geometry, roleMat(part)));
+        const whi = new THREE.Group();
+        const wlo = new THREE.Group();
+        for (const part of w.parts) {
+          const mat = roleMat(part);
+          whi.add(new THREE.Mesh(part.geometry, mat));
+          if (part.lod) wlo.add(new THREE.Mesh(part.lod, mat));
+        }
+        spin.add(whi, wlo);
+        this.hiGroups.push(whi);
+        this.loGroups.push(wlo);
         pivot.add(spin);
         pivot.position.set(w.center.x, w.center.y + this.bodyOffset.y, w.center.z + this.bodyOffset.z);
         this.object.add(pivot);
@@ -268,6 +296,7 @@ export class CarVisual {
         this.spins.push(spin);
       }
     }
+    this.setLodLevel(0);
 
     // ---- lights (emissive quads if the model has no light materials)
     const lightQuad = (p: THREE.Vector3, w: number, h: number, mat: THREE.Material, facing: number) => {
@@ -364,8 +393,7 @@ export class CarVisual {
       const dz = physMid - pm.axleMidZ - this.bodyOffset.z;
       if (Math.abs(dz) > 1e-4) {
         this.bodyOffset.z += dz;
-        this.body.children[0].position.z = this.bodyOffset.z;
-        for (const c of this.body.children) if (c !== this.body.children[0]) c.position.z += dz;
+        for (const c of this.body.children) c.position.z += dz;
         this.shadow.position.z += dz;
         if (this.glow) this.glow.position.z += dz;
         for (const e of this.exhausts) e.z += dz;
@@ -378,7 +406,7 @@ export class CarVisual {
       const c = centers[i];
       if (pm.wheels) {
         const w = pm.wheels[i];
-        p.position.set(w.center.x, c.y, w.center.z + this.bodyOffset.z);
+        p.position.set(w.center.x, c.y + this.wheelLift, w.center.z + this.bodyOffset.z);
       } else p.position.copy(c);
       p.rotation.set(0, steer[i] ?? 0, 0);
       this.spins[i].rotation.x = spin[i] ?? 0;
@@ -391,7 +419,7 @@ export class CarVisual {
   }
 
   setLights(o: { brake: number; reverse: boolean; headlights: boolean; nitro: boolean }) {
-    this.tailMat.emissiveIntensity = 2.4 + 13 * THREE.MathUtils.clamp(o.brake, 0, 1);
+    this.tailMat.emissiveIntensity = 1.8 + 8 * THREE.MathUtils.clamp(o.brake, 0, 1);
     this.reverseMat.emissiveIntensity = o.reverse ? 7 : 0;
     this.headMat.emissiveIntensity = o.headlights ? 10 : 0.4;
     this.beamMat.uniforms.uIntensity.value = o.headlights ? (this.opts.player ? 0.03 : 0.045) : 0;
@@ -406,11 +434,22 @@ export class CarVisual {
     this.body.rotation.set(pitch, 0, roll);
   }
 
-  /** Hide interior details when far away (cheap LOD). */
+  /** Distance LOD: full detail up close, simplified meshes (no interior) further away. */
   updateLod(camera: THREE.Vector3) {
     const d = this.object.getWorldPosition(_v).distanceTo(camera);
-    const showInterior = d < 28;
-    for (const m of this.interior) m.visible = showInterior;
+    const far = this.opts.player ? 70 : 34;
+    this.setLodLevel(d < far ? 0 : 1);
+    if (this.lodLevel === 0) {
+      const showInterior = d < 26;
+      for (const m of this.interior) m.visible = showInterior;
+    }
+  }
+
+  setLodLevel(level: 0 | 1) {
+    if (level === this.lodLevel) return;
+    this.lodLevel = level;
+    for (const g of this.hiGroups) g.visible = level === 0;
+    for (const g of this.loGroups) g.visible = level === 1;
   }
 
   setPaint(color: number) {
@@ -526,7 +565,7 @@ export function makeTrafficVisual(models: CarModels, entry: CarModelEntry, paint
   }
   if (!trafficHead) trafficHead = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff1df, emissiveIntensity: 8, roughness: 0.2 });
   if (!trafficBeamMat) trafficBeamMat = makeBeamMaterial(0.04);
-  const tail = new THREE.MeshStandardMaterial({ color: 0x2a0000, emissive: 0xff1608, emissiveIntensity: 2.2, roughness: 0.3 });
+  const tail = new THREE.MeshStandardMaterial({ color: 0x1a0000, emissive: 0xff0400, emissiveIntensity: 1.6, roughness: 0.3 });
   const root = new THREE.Group();
   for (const p of t.parts) {
     const mat = p.role === 'paint' ? pmat : p.role === 'head' ? trafficHead : p.role === 'tail' ? tail : p.material;
@@ -539,7 +578,7 @@ export function makeTrafficVisual(models: CarModels, entry: CarModelEntry, paint
   sh.renderOrder = 2;
   root.add(sh);
   root.userData.setBrake = (b: number) => {
-    tail.emissiveIntensity = 2.2 + 12 * THREE.MathUtils.clamp(b, 0, 1);
+    tail.emissiveIntensity = 1.6 + 7 * THREE.MathUtils.clamp(b, 0, 1);
   };
   root.userData.halfExtents = t.half.clone();
   root.userData.dispose = () => tail.dispose();

@@ -62,6 +62,8 @@ export class RacerAI {
   private avoid = 0; // lateral offset relative to the racing line (m)
   private avoidTarget = 0;
   private avoidHold = 0;
+  private avoidSide = 1;
+  private avoidSideTimer = 0;
   private integ = 0;
   private stuckTimer = 0;
   private recovering = false;
@@ -80,6 +82,7 @@ export class RacerAI {
   private wobblePhase = Math.random() * 10;
   private nitroCooldown = 0;
   private lastSteer = 0;
+  private airHold = 0;
   private sectionMult: Float32Array;
   private curSection = -1;
   private secBad = 0;
@@ -200,9 +203,9 @@ export class RacerAI {
 
     if (!ctx.raceStarted) {
       inp.throttle = 0;
-      inp.brake = 1;
+      inp.brake = 0.25; // < reverse-engage threshold; handbrake holds the car
+      inp.handbrake = 1;
       inp.steer = 0;
-      inp.handbrake = 0;
       inp.nitro = false;
       this.lastS = s;
       return;
@@ -280,50 +283,76 @@ export class RacerAI {
         }
       }
     }
+    let avoidRate = 1.5; // m/s lateral slew of the avoidance offset
     if (urgent) {
       const o = urgent;
-      const need = myHalfW + o.halfWidth + margin + 0.35;
-      const cands = [o.lateral - need, o.lateral + need];
-      const rl = track.racingLineAt(o.s) + this.laneBias;
-      let best = NaN;
-      let bestCost = Infinity;
-      for (const c of cands) {
-        if (c < -lim - 0.6 || c > lim + 0.6) continue;
-        const cc = THREE.MathUtils.clamp(c, -lim, lim);
-        // other obstacles near the same spot block this side
-        let blocked = false;
-        for (const o2 of ctx.obstacles) {
-          if (o2 === o) continue;
-          const d2 = track.deltaS(o.s, o2.s);
-          if (Math.abs(d2) > 18) continue;
-          if (Math.abs(o2.lateral - cc) < myHalfW + o2.halfWidth + 0.4) {
-            blocked = true;
-            break;
-          }
-        }
-        if (blocked) continue;
-        const cost = Math.abs(cc - rl) + Math.abs(cc - curLat) * 0.6;
-        if (cost < bestCost) {
-          bestCost = cost;
-          best = cc;
-        }
-      }
       const oi = track.wrap(Math.floor(track.wrapS(o.s) / track.step));
       const oAlong = o.velocity.x * track.tx[oi] + o.velocity.y * track.ty[oi] + o.velocity.z * track.tz[oi];
+      const oncoming = oAlong < -2;
+      const dsO = track.deltaS(s, o.s);
+      const clearNeed = o.halfWidth + myHalfW + 0.3; // minimum to physically clear it
+      const need = myHalfW + o.halfWidth + margin + 0.35;
+      const rl = track.racingLineAt(o.s) + this.laneBias;
+      const wide = hw - myHalfW - 0.35;
+      // Is a lateral corridor at `lat` free of other obstacles between us and just past `o`?
+      const corridorFree = (lat: number) => {
+        for (const o2 of ctx.obstacles) {
+          if (o2 === o) continue;
+          const d2 = track.deltaS(s, o2.s);
+          if (d2 < -(myHalfL + o2.halfLength) || d2 > dsO + o.halfLength + o2.halfLength + 4) continue;
+          if (Math.abs(o2.lateral - lat) < myHalfW + o2.halfWidth + 0.35) return false;
+        }
+        return true;
+      };
+      let best = NaN;
+      let bestCost = Infinity;
+      for (const side of [-1, 1]) {
+        const c = o.lateral + side * need;
+        const cc = THREE.MathUtils.clamp(c, -lim, lim);
+        let cand = cc;
+        // clamped toward the obstacle? allow using the full road width if that still clears it
+        if (Math.abs(cand - o.lateral) < clearNeed) cand = THREE.MathUtils.clamp(o.lateral + side * clearNeed, -wide, wide);
+        if (Math.abs(cand - o.lateral) < clearNeed - 0.05) continue; // no room on this side
+        if (!corridorFree(cand)) continue;
+        let cost = Math.abs(cand - rl) + Math.abs(cand - curLat) * 0.8;
+        if (cand !== cc) cost += 1.5; // using the margin near the curb
+        if (this.avoidSideTimer > 0 && side === this.avoidSide) cost -= 2.5; // commit to a side
+        if (oncoming && side > 0) cost -= 2; // head-on: dodge toward the race-direction lanes
+        if (cost < bestCost) {
+          bestCost = cost;
+          best = cand;
+        }
+      }
+      let crawl = false;
+      if (Number.isNaN(best) && oncoming) {
+        // head-on traffic: never stop and wait (deadlock) - dodge toward the race-direction lanes
+        best = THREE.MathUtils.clamp(o.lateral + clearNeed, -wide, wide);
+      } else if (Number.isNaN(best) && Math.abs(oAlong) < 3) {
+        // stopped car / wreck with no clean gap: squeeze past on the roomier side at crawling speed
+        const l = o.lateral - clearNeed;
+        const r = o.lateral + clearNeed;
+        best = wide - r >= l + wide ? Math.min(r, wide) : Math.max(l, -wide);
+        crawl = true;
+      }
       if (!Number.isNaN(best)) {
         this.avoidTarget = best - rl;
         this.avoidHold = 0.6;
-        // If the lateral move cannot finish in time, scrub some speed too.
-        const move = Math.abs(best - curLat);
-        if (move > 1.2 && urgentTtc < move / 3.5) blockSpeed = Math.max(oAlong + 2, 0);
-      } else if (urgentTtc < 1.8) {
+        this.avoidSide = best >= o.lateral ? 1 : -1;
+        this.avoidSideTimer = 1.0;
+        avoidRate = THREE.MathUtils.clamp(5 / Math.max(urgentTtc, 0.4), 2.5, 6.5);
+        // If the lateral move cannot finish in time, scrub speed too.
+        const move = Math.max(0, clearNeed - Math.abs(curLat - o.lateral));
+        const tMove = move / (avoidRate * 0.8) + 0.25;
+        if (crawl) blockSpeed = Math.min(blockSpeed, 6 + Math.max(0, urgentTtc - 1) * 6);
+        else if (urgentTtc < tMove) blockSpeed = oncoming ? Math.max(v * 0.7, 8) : Math.max(oAlong + 1, 0);
+      } else if (urgentTtc < 2.2) {
         blockSpeed = Math.max(oAlong - 1.5, 0);
       }
     }
+    if (this.avoidSideTimer > 0) this.avoidSideTimer -= dt;
     if (this.avoidHold > 0) this.avoidHold -= dt;
     else this.avoidTarget *= Math.max(0, 1 - dt * 0.8);
-    const rate = urgent ? 3.0 : 1.2;
-    this.avoid += THREE.MathUtils.clamp(this.avoidTarget - this.avoid, -rate * dt * 4, rate * dt * 4) * Math.min(1, dt * rate * 2);
+    this.avoid += THREE.MathUtils.clamp(this.avoidTarget - this.avoid, -avoidRate * dt, avoidRate * dt);
 
     // ---------- steering: pure pursuit from the rear axle ----------
     const b = spec.wheelbase * spec.frontWeight; // COM to rear axle
@@ -444,6 +473,19 @@ export class RacerAI {
       return;
     }
 
+    // airborne (crest jumps): no steering wind-up, neutral throttle, then ease back in after landing
+    if (veh.groundedWheels < 2) {
+      this.airHold = 0.35;
+      steer = 0;
+      throttle = Math.min(throttle, 0.25);
+      brake = 0;
+      nitro = false;
+    } else if (this.airHold > 0) {
+      this.airHold -= dt;
+      const k = 1 - this.airHold / 0.35;
+      steer *= 0.3 + 0.7 * k;
+    }
+
     // smooth steering a little to avoid twitch (vehicle also rate-limits)
     const sm = Math.min(1, dt * 14);
     this.lastSteer += (steer - this.lastSteer) * sm;
@@ -452,5 +494,10 @@ export class RacerAI {
     inp.brake = brake;
     inp.handbrake = 0;
     inp.nitro = nitro;
+    // holding at a standstill: the auto gearbox would engage reverse on a held brake - use the handbrake
+    if (vAbs < 1.0 && brake > 0.25 && throttle < 0.05) {
+      inp.brake = 0.25;
+      inp.handbrake = 1;
+    }
   }
 }

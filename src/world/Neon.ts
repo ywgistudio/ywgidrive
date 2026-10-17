@@ -369,7 +369,7 @@ export function placeSigns(atlas: NeonAtlas, facades: Facade[], seed = 77): Sign
     const bright = () => r.range(2.2, 4.5);
     const flick = () => (r.chance(0.06) ? 2 : r.chance(0.15) ? 1 : 0);
     // shop sign above the ground floor
-    if (f.shop && f.height > 6 && r.chance(0.85)) {
+    if (f.shop && f.height > 6 && r.chance(0.95)) {
       const cell = atlas.pick('h', r);
       const c = atlas.cells[cell];
       const w = Math.min(f.width * r.range(0.4, 0.75), 11);
@@ -379,8 +379,8 @@ export function placeSigns(atlas: NeonAtlas, facades: Facade[], seed = 77): Sign
       out.push({ cell, pos, normal: f.normal.clone(), up, width: w, height: h, color: new THREE.Color(1, 1, 1).multiplyScalar(bright()), flicker: flick(), phase: r.next() });
     }
     // vertical blade signs perpendicular to the facade, visible down the street
-    if (f.height > 12 && r.chance(0.35 + dense * 0.55)) {
-      const nBlades = f.zone === 'downtown' && r.chance(0.4) ? 2 : 1;
+    if (f.height > 12 && r.chance(0.3 + dense * 0.65)) {
+      const nBlades = f.zone === 'downtown' && r.chance(0.55) ? 2 : 1;
       for (let b = 0; b < nBlades; b++) {
         const cell = atlas.pick('v', r);
         const h = Math.min(r.range(5, 10), f.height - 7);
@@ -394,6 +394,16 @@ export function placeSigns(atlas: NeonAtlas, facades: Facade[], seed = 77): Sign
           out.push({ cell, pos: base.clone().addScaledVector(f.along, dir * 0.06), normal: f.along.clone().multiplyScalar(-dir), up, width: w, height: h, color: new THREE.Color(1, 1, 1).multiplyScalar(bright()), flicker: flick(), phase: r.next() });
         }
       }
+    }
+    // upper floor neon (hotel/club names high on the facade)
+    if (f.height > 20 && r.chance(0.25 + dense * 0.35)) {
+      const cell = atlas.pick('h', r);
+      const c = atlas.cells[cell];
+      const w = Math.min(f.width * r.range(0.5, 0.85), 16);
+      const h = w / c.aspect;
+      const pos = f.pos.clone().addScaledVector(f.normal, 0.25);
+      pos.y += r.range(9, Math.max(10, f.height - h - 2)) + h / 2;
+      out.push({ cell, pos, normal: f.normal.clone(), up, width: w, height: h, color: new THREE.Color(1, 1, 1).multiplyScalar(bright()), flicker: flick(), phase: r.next() });
     }
     // rooftop billboard
     if (f.height > 14 && f.height < 70 && r.chance(0.12 + dense * 0.15)) {

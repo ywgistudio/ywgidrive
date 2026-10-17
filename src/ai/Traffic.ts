@@ -272,6 +272,9 @@ export class Traffic {
     this.parametricPose(c);
     c.prevPosition.copy(c.curPosition);
     c.prevQuaternion.copy(c.curQuaternion);
+    // controller targets valid even if substep() runs before the first update()
+    c.desiredVel.copy(c.velocity);
+    c.desiredFwd.set(0, 0, 1).applyQuaternion(c.curQuaternion);
     c.collider.setFriction(0);
     c.collider.setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min);
     c.body.setAngularDamping(0.4);

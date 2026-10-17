@@ -37,14 +37,21 @@ export class Terrain {
 
   /** 0..1 how much (x,z) is harbor water. */
   basin(x: number, z: number): number {
-    // north-east of the harbor boulevard and east of the docks hairpin
-    const north = smooth(560, 600, x) * smooth(408, 380, z) * smooth(-900, -700, z);
+    // north-east of the harbor boulevard and east of the docks hairpin, only on the outside (left) of the circuit
+    const north = smooth(555, 600, x) * smooth(480, 455, z) * smooth(-900, -700, z);
     const east = smooth(1172, 1205, x) * smooth(760, 720, z);
     const m = Math.max(north, east);
     if (m <= 0) return 0;
-    // keep a quay promenade beside the road walls
-    const cl = this.grid.clearance(x, z, 60);
-    return m * smooth(5, 12, cl);
+    const t = this.track;
+    const n = this.grid.nearest(x, z, 140);
+    if (n.index >= 0) {
+      const i = n.index;
+      const lat = (x - t.px[i]) * t.rx[i] + (z - t.pz[i]) * t.rz[i];
+      if (lat > 0) return 0; // inside of the loop: dry land
+      const cl = -lat - (t.halfWidth + t.sidewalk[i]);
+      return m * smooth(4.5, 9, cl);
+    }
+    return m;
   }
 
   /** Background relief away from the track (hills to the south). */

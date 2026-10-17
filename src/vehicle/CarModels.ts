@@ -3,6 +3,14 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+// @ts-expect-error untyped three addon
+import { MeshoptSimplifier as _MeshoptSimplifier } from 'three/examples/jsm/libs/meshopt_simplifier.module.js';
+
+const MeshoptSimplifier = _MeshoptSimplifier as {
+  ready: Promise<void>;
+  simplify(indices: Uint32Array, positions: Float32Array, stride: number, targetIndexCount: number, targetError: number, flags?: string[]): [Uint32Array, number];
+  simplifySloppy(indices: Uint32Array, positions: Float32Array, stride: number, lock: Uint8Array | null, targetIndexCount: number, targetError: number): [Uint32Array, number];
+};
 
 export type WheelKey = 'fl' | 'fr' | 'rl' | 'rr';
 export const WHEEL_KEYS: WheelKey[] = ['fl', 'fr', 'rl', 'rr']; // same order as Vehicle.wheels
@@ -40,8 +48,93 @@ export type MatRole = 'paint' | 'glass' | 'chrome' | 'rubber' | 'metal' | 'head'
 
 export interface MergedPart {
   geometry: THREE.BufferGeometry;
+  /** simplified version sharing the same vertex attributes (== geometry for small parts) */
+  lod: THREE.BufferGeometry | null; // null = drop this part at distance (interior)
   material: THREE.Material; // template material (already converted for its role)
   role: MatRole;
+}
+
+let simplifierReady = false;
+
+/**
+ * Build a cheaper index buffer over the same vertices with meshoptimizer.
+ * Many car exports are "double sided" by duplicating every triangle, and split at every uv/normal
+ * seam, which locks the simplifier. So: weld by position, drop the inward copy of duplicated faces,
+ * compact, simplify, and map back to the original vertices (keeping their normals/uvs).
+ */
+function makeLod(g: THREE.BufferGeometry, ratio: number, error: number, center: THREE.Vector3): THREE.BufferGeometry {
+  const idx = g.index;
+  if (!simplifierReady || !idx || idx.count < 900) return g;
+  try {
+    const pos = g.getAttribute('position').array as Float32Array;
+    const ix = idx.array as ArrayLike<number>;
+    const key = (i: number) => `${Math.round(pos[i * 3] * 4000)},${Math.round(pos[i * 3 + 1] * 4000)},${Math.round(pos[i * 3 + 2] * 4000)}`;
+    const nv = pos.length / 3;
+    const canon = new Uint32Array(nv);
+    const seen = new Map<string, number>();
+    for (let i = 0; i < nv; i++) {
+      const k = key(i);
+      const c = seen.get(k);
+      if (c === undefined) {
+        seen.set(k, i);
+        canon[i] = i;
+      } else canon[i] = c;
+    }
+    const best = new Map<string, { t: number; score: number }>();
+    for (let t = 0; t < ix.length; t += 3) {
+      const a = ix[t], b = ix[t + 1], c = ix[t + 2];
+      const A = canon[a], B = canon[b], C = canon[c];
+      if (A === B || B === C || A === C) continue;
+      const ux = pos[b * 3] - pos[a * 3], uy = pos[b * 3 + 1] - pos[a * 3 + 1], uz = pos[b * 3 + 2] - pos[a * 3 + 2];
+      const vx = pos[c * 3] - pos[a * 3], vy = pos[c * 3 + 1] - pos[a * 3 + 1], vz = pos[c * 3 + 2] - pos[a * 3 + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      const cx = (pos[a * 3] + pos[b * 3] + pos[c * 3]) / 3 - center.x;
+      const cy = (pos[a * 3 + 1] + pos[b * 3 + 1] + pos[c * 3 + 1]) / 3 - center.y;
+      const cz = (pos[a * 3 + 2] + pos[b * 3 + 2] + pos[c * 3 + 2]) / 3 - center.z;
+      const score = nx * cx + ny * cy + nz * cz;
+      const s3 = A < B ? (B < C ? [A, B, C] : A < C ? [A, C, B] : [C, A, B]) : A < C ? [B, A, C] : B < C ? [B, C, A] : [C, B, A];
+      const k = `${s3[0]},${s3[1]},${s3[2]}`;
+      const prev = best.get(k);
+      if (!prev || score > prev.score) best.set(k, { t, score });
+    }
+    // re-weld with the kept faces' own vertices, then compact for the simplifier
+    const canon2 = new Map<string, number>();
+    const remap = new Map<number, number>();
+    const back: number[] = [];
+    const cpos: number[] = [];
+    const welded = new Uint32Array(best.size * 3);
+    let w = 0;
+    for (const { t } of best.values()) {
+      for (let e = 0; e < 3; e++) {
+        const v = ix[t + e];
+        const k = key(v);
+        let cv = canon2.get(k);
+        if (cv === undefined) canon2.set(k, (cv = v));
+        let ci = remap.get(cv);
+        if (ci === undefined) {
+          ci = back.length;
+          remap.set(cv, ci);
+          back.push(cv);
+          cpos.push(pos[cv * 3], pos[cv * 3 + 1], pos[cv * 3 + 2]);
+        }
+        welded[w++] = ci;
+      }
+    }
+    const target = Math.max(3, Math.floor((welded.length * ratio) / 3) * 3);
+    const [out] = MeshoptSimplifier.simplify(welded, new Float32Array(cpos), 3, target, error, ['Prune']);
+    if (out.length === 0 || out.length >= idx.count * 0.9) return g;
+    const mapped = new Uint32Array(out.length);
+    for (let i = 0; i < out.length; i++) mapped[i] = back[out[i]];
+    const lod = new THREE.BufferGeometry();
+    for (const name of Object.keys(g.attributes)) lod.setAttribute(name, g.getAttribute(name));
+    lod.setIndex(new THREE.BufferAttribute(mapped, 1));
+    lod.boundingBox = g.boundingBox;
+    lod.boundingSphere = g.boundingSphere;
+    return lod;
+  } catch (e) {
+    console.warn('[CarModels] simplify failed', e);
+    return g;
+  }
 }
 
 export interface PreparedWheel {
@@ -71,6 +164,7 @@ export interface PreparedModel {
   hasHeadMat: boolean;
   hasTailMat: boolean;
   tris: number;
+  lodTris: number;
 }
 
 /** Built-in fallback: the three.js example Ferrari 458 (draco), always available as a realistic hero car. */
@@ -234,7 +328,7 @@ function mergeByMaterial(items: { geo: THREE.BufferGeometry; mat: THREE.Material
     if (!merged) continue;
     merged.computeBoundingBox();
     merged.computeBoundingSphere();
-    out.push({ geometry: merged, material: mat, role: g.role });
+    out.push({ geometry: merged, lod: null, material: mat, role: g.role });
   }
   return out;
 }
@@ -287,6 +381,12 @@ export class CarModels {
 
   async load(onProgress?: (p: number) => void): Promise<void> {
     const [sports, traffic] = await Promise.all([this.manifest('manifest.sports.json'), this.manifest('manifest.traffic.json')]);
+    try {
+      await MeshoptSimplifier.ready;
+      simplifierReady = true;
+    } catch {
+      simplifierReady = false;
+    }
     this.sports = sports;
     this.traffic = traffic;
     // the built-in ferrari is always loaded as a guaranteed realistic fallback
@@ -441,6 +541,10 @@ export class CarModels {
     }
 
     const body = mergeByMaterial(bodyItems);
+    // distance LOD: ~22% of the triangles, interior dropped entirely
+    const lodCenter = bounds.getCenter(new THREE.Vector3());
+    for (const p of body) p.lod = p.role === 'interior' ? null : makeLod(p.geometry, 0.3, 0.004, lodCenter);
+    if (wheels) for (const w of wheels) for (const p of w.parts) p.lod = makeLod(p.geometry, 0.3, 0.01, new THREE.Vector3());
     let wheelbase = bounds.max.z - bounds.min.z;
     let trackFront = bounds.max.x - bounds.min.x;
     let trackRear = trackFront;
@@ -476,6 +580,8 @@ export class CarModels {
     let exhausts = exhaustParts.length ? sideCenters(exhaustParts) : [];
     if (!exhausts.length) exhausts = [new THREE.Vector3(W * 0.2, H * 0.22, bounds.min.z + 0.05), new THREE.Vector3(-W * 0.2, H * 0.22, bounds.min.z + 0.05)];
 
-    return { entry, body, wheels, bounds, wheelbase, trackFront, trackRear, wheelRadius, wheelCenterY, axleMidZ, headlights, taillights, exhausts, hasHeadMat, hasTailMat, tris: Math.round(tris) };
+    let lodTris = 0;
+    for (const p of [...body, ...(wheels ?? []).flatMap((w) => w.parts)]) if (p.lod) lodTris += p.lod.index!.count / 3;
+    return { entry, body, wheels, bounds, wheelbase, trackFront, trackRear, wheelRadius, wheelCenterY, axleMidZ, headlights, taillights, exhausts, hasHeadMat, hasTailMat, tris: Math.round(tris), lodTris: Math.round(lodTris) };
   }
 }

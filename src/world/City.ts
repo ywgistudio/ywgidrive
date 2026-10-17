@@ -159,7 +159,7 @@ export class City {
     const core = Math.exp(-(((x + 60) / 420) ** 2 + ((z - 160) / 380) ** 2));
     let h: number;
     let style: number;
-    let lit = r.range(0.35, 0.75);
+    let lit = r.range(0.16, 0.5);
     switch (zone) {
       case 'downtown':
         h = r.range(18, 55) + core * r.range(20, 140) * (r.chance(0.35) ? 1.6 : 1);

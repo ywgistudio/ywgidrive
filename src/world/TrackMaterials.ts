@@ -266,6 +266,8 @@ export function createTrackMaterials(track: Track, tex: TrackTextures, lamps: La
   const concrete = mkConcrete(0x8d8c88, 'concrete');
   const retain = mkConcrete(0x6d6b66, 'retain');
   const tunnelCeil = mkConcrete(0x2a2a2c, 'tunnelCeil');
+  tunnelCeil.roughnessMap = null;
+  tunnelCeil.roughness = 0.95;
 
   const metal = new THREE.MeshStandardMaterial({ color: 0xa7adb4, metalness: 0.9, roughness: 0.3 });
   applyPatches(metal, [lamps.patch({ flat: true })]);
