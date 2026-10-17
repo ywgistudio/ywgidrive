@@ -57,6 +57,8 @@ export interface TrafficCar {
   vDes: number;
   idmAcc: number;
   speedAlong: number; // m/s along its own driving direction
+  offTimer: number;
+  waitTimer: number;
   readonly prevPosition: THREE.Vector3;
   readonly prevQuaternion: THREE.Quaternion;
   readonly curPosition: THREE.Vector3;
@@ -81,6 +83,7 @@ const IDM_B = 2.5;
 const IDM_S0 = 2.5;
 
 const _f: TrackFrame = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), right: new THREE.Vector3(), up: new THREE.Vector3() };
+const _f2: TrackFrame = { pos: new THREE.Vector3(), tangent: new THREE.Vector3(), right: new THREE.Vector3(), up: new THREE.Vector3() };
 const _v = new THREE.Vector3();
 const _e = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
@@ -236,6 +239,8 @@ export class Traffic {
       vDes: v0,
       idmAcc: 0,
       speedAlong: v0,
+      offTimer: 0,
+      waitTimer: 0,
       prevPosition: new THREE.Vector3(),
       prevQuaternion: new THREE.Quaternion(),
       curPosition: new THREE.Vector3(),
@@ -269,6 +274,8 @@ export class Traffic {
     c.braking = false;
     c.crashed = false;
     c.crashTimer = 0;
+    c.offTimer = 0;
+    c.waitTimer = 0;
     this.parametricPose(c);
     c.prevPosition.copy(c.curPosition);
     c.prevQuaternion.copy(c.curQuaternion);
@@ -450,9 +457,9 @@ export class Traffic {
         const need = c.halfWidth + a.halfWidth + 0.3;
         if (Math.abs(a.lat - c.laneLat) > need && Math.abs(a.lat - c.lateral) > need) continue;
         const along = a.along * c.dir;
-        // ignore head-on movers (racers dodging through the oncoming lanes); stopped/slow things count
-        if (along < -2) continue;
         const g = ds - c.halfLength - a.halfLength;
+        // head-on movers in our lane: far away they'll dodge (ignore), close by treat as a stopped obstacle
+        if (along < -2 && g > 45) continue;
         if (g < gap) {
           gap = g;
           leadV = Math.max(0, along);
@@ -463,6 +470,12 @@ export class Traffic {
       for (let d = 0; d <= 50; d += 10) {
         const k = Math.abs(tr.curvature[tr.wrap(Math.floor(tr.wrapS(c.s + c.dir * d) / tr.step))]);
         if (k > 1e-4) v0 = Math.min(v0, Math.sqrt((0.3 * G) / k));
+      }
+      // crests: slow down so the car stays planted (v^2 / R < 0.6 g)
+      for (let d = 0; d <= 40; d += 10) {
+        const i0 = tr.wrap(Math.floor(tr.wrapS(c.s + c.dir * d) / tr.step));
+        const kv = (tr.py[tr.wrap(i0 + 5)] - 2 * tr.py[i0] + tr.py[tr.wrap(i0 - 5)]) / 100;
+        if (kv < -1e-3) v0 = Math.min(v0, Math.sqrt((0.6 * G) / -kv));
       }
       v0 = Math.max(v0, 6);
       const v = Math.max(0, c.speedAlong);
@@ -480,6 +493,18 @@ export class Traffic {
 
       // ---- lane changes ----
       c.laneCooldown -= dt;
+      c.waitTimer = v < 0.5 && gap < 25 ? c.waitTimer + dt : 0;
+      if (c.waitTimer > 5 && c.laneT >= 1 && c.blinkerTimer <= 0) {
+        // been sitting behind a wreck / a racer in our lane: pull around it in the other lane
+        const target = c.lane === 0 ? 1 : c.lane === 1 ? 0 : c.lane === 2 ? 3 : 2;
+        if (this.laneClear(c.s, target, 8, i)) {
+          c.laneTo = target;
+          c.laneFrom = c.lane;
+          c.laneT = 0;
+          c.blinker = (Math.sign(tr.lanes[target] - tr.lanes[c.lane]) * c.dir) as -1 | 1;
+          c.waitTimer = 0;
+        }
+      }
       if (c.laneT >= 1 && c.blinkerTimer <= 0 && c.laneCooldown <= 0) {
         const slowLeader = gap < 35 && leadV < c.v0 - 3;
         const want = slowLeader ? 0.6 : 0.035;
@@ -527,9 +552,14 @@ export class Traffic {
       tr.frameAt(c.s, _f);
       c.upRef.copy(_f.up);
       const latErr = c.laneLat - c.lateral;
-      const latVel = THREE.MathUtils.clamp(latErr * 0.9, -2.4, 2.4);
-      c.desiredVel.copy(_f.tangent).multiplyScalar(c.dir * c.vDes).addScaledVector(_f.right, latVel);
-      c.desiredFwd.copy(_f.tangent).multiplyScalar(c.dir * Math.max(c.vDes, 4)).addScaledVector(_f.right, latVel * 0.6);
+      // lateral velocity of the lane itself while changing lanes (feedforward)
+      const laneVel = c.laneT < 1 ? ((tr.lanes[c.laneTo] - tr.lanes[c.laneFrom]) * 6 * c.laneT * (1 - c.laneT)) / 2.6 : 0;
+      const latVel = THREE.MathUtils.clamp(laneVel + latErr * 1.8, -3, 3);
+      // direction: blend toward the tangent slightly ahead so curves are anticipated
+      tr.frameAt(c.s + c.dir * Math.max(2, c.speedAlong * 0.35), _f2);
+      _a.copy(_f.tangent).add(_f2.tangent).normalize();
+      c.desiredVel.copy(_a).multiplyScalar(c.dir * c.vDes).addScaledVector(_f.right, latVel);
+      c.desiredFwd.copy(_a).multiplyScalar(c.dir * Math.max(c.vDes, 4)).addScaledVector(_f.right, latVel * 0.5);
       c.desiredFwd.addScaledVector(_f.up, -c.desiredFwd.dot(_f.up)).normalize();
 
       // ---- crash detection from state ----
@@ -537,7 +567,9 @@ export class Traffic {
       _up.set(0, 1, 0).applyQuaternion(c.curQuaternion);
       const headingDot = _fwd.dot(c.desiredFwd);
       const tilt = _up.dot(_f.up);
-      if (headingDot < 0.82 || tilt < 0.85 || Math.abs(latErr) > 2.8 || c.speedAlong > c.vDes + 9 || c.speedAlong < -3) {
+      const off = headingDot < 0.82 || tilt < 0.8 || Math.abs(latErr) > 2.8;
+      c.offTimer = off ? c.offTimer + dt : 0;
+      if (c.offTimer > 0.2 || c.speedAlong > c.vDes + 9 || c.speedAlong < -3) {
         this.crash(c);
       }
     }
@@ -549,8 +581,11 @@ export class Traffic {
       if (c.crashed) {
         c.crashTimer += dt;
         const fell = c.curPosition.y < tr.py[tr.wrap(c.index < 0 ? 0 : c.index)] - 15;
-        const lost = c.crashTimer > 30 && dist > 120;
-        if ((c.crashTimer > 4 && dist > RESPAWN_MIN_DIST) || fell || lost) {
+        // tow wrecks: out of range quickly; ones the player already left behind after a while; anything
+        // not right next to the player after 20 s (stops permanent blockades)
+        const behind = this.track.deltaS(this.focusS, c.s) < -25;
+        const towed = (c.crashTimer > 9 && behind && dist > 50) || (c.crashTimer > 15 && dist > 30);
+        if ((c.crashTimer > 4 && dist > RESPAWN_MIN_DIST) || fell || towed) {
           this.respawn(i);
           continue;
         }
@@ -595,6 +630,17 @@ export class Traffic {
       if (ds > 0 && ds < 30 && along < c.speedAlong - 3) return false; // slow car just ahead in the target lane
     }
     return true;
+  }
+
+  /**
+   * Respawn every traffic car (crashed or not) within `radius` of `position` - call before putting a
+   * racer/player back on track so the reset spot isn't sitting on a wreck.
+   */
+  clearAround(position: THREE.Vector3, radius: number) {
+    const r2 = radius * radius;
+    for (let i = 0; i < this.cars.length; i++) {
+      if (this.cars[i].curPosition.distanceToSquared(position) < r2) this.respawn(i);
+    }
   }
 
   /** Move a car to a fresh, out-of-sight lane position. */

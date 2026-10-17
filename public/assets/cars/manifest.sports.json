@@ -1,0 +1,498 @@
+{
+  "version": 1,
+  "generated": "2026-10-17",
+  "convention": "All GLBs normalized: +Y up, +Z forward, +X = car's left, meters (bbox length == lengthMeters), tire bottom at y=0, x/z centered on bbox. Hierarchy: <id> > body > body_mesh, and wheel_fl/fr/rl/rr pivot nodes (translation = wheel center, identity rotation/scale, axle along X) each with a child wheel_xx_mesh. Rotate the wheel_xx node about local X to spin and about local Y to steer. Geometry: EXT_meshopt_compression + KHR_mesh_quantization (GLTFLoader.setMeshoptDecoder). Textures: EXT_texture_webp, max 1024px.",
+  "models": [
+    {
+      "id": "porsche_992_turbo_s",
+      "file": "porsche_992_turbo_s.glb",
+      "role": "hero",
+      "make": "porsche",
+      "realModel": "911 Turbo S (992)",
+      "name": "Porsche 911 Turbo S (992) with interior",
+      "source": "https://sketchfab.com/3d-models/porsche-911-with-interior-877b1bc1739f4a2bb65d62fd7ffd9f75",
+      "downloadUrl": "https://raw.githubusercontent.com/nalostta/aworld/c014b6f45654bbcdb2898b51a76204d3b72a3eb2/static/models/Porsche_911_Interior/scene.gltf",
+      "license": "CC-BY-4.0",
+      "credit": "This work is based on \"Porsche 911 with interior\" (https://sketchfab.com/3d-models/porsche-911-with-interior-877b1bc1739f4a2bb65d62fd7ffd9f75) by n.brizitskaya (https://sketchfab.com/n.brizitskaya) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+      "author": "n.brizitskaya",
+      "authorUrl": "https://sketchfab.com/n.brizitskaya",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.535,
+      "bounds": {
+        "min": [
+          -1.0136,
+          0,
+          -2.2675
+        ],
+        "max": [
+          1.0136,
+          1.3106,
+          2.2675
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.7786,
+          0.3489,
+          1.2528
+        ],
+        "fr": [
+          -0.7786,
+          0.3489,
+          1.2528
+        ],
+        "rl": [
+          0.7849,
+          0.3536,
+          -1.1988
+        ],
+        "rr": [
+          -0.7849,
+          0.3536,
+          -1.1988
+        ]
+      },
+      "wheelRadius": 0.3449,
+      "wheelRadii": {
+        "fl": 0.3362,
+        "fr": 0.3362,
+        "rl": 0.3536,
+        "rr": 0.3536
+      },
+      "wheelWidths": {
+        "fl": 0.2763,
+        "fr": 0.2763,
+        "rl": 0.339,
+        "rr": 0.339
+      },
+      "wheelsSeparate": true,
+      "wheelPivotAtCenter": true,
+      "paintMaterials": [
+        "body_main"
+      ],
+      "glassMaterials": [
+        "windows"
+      ],
+      "headlightMaterials": [
+        "headlight_lens",
+        "headlight_pattern"
+      ],
+      "taillightMaterials": [
+        "taillight_lens",
+        "taillight_pattern",
+        "red_light_main"
+      ],
+      "logos": {
+        "materials": [
+          "LOGO1",
+          "number_plate1"
+        ],
+        "notes": "LOGO1 = all Porsche lettering/crests (rear 'PORSCHE' bar, hood crest, 'turbo S' scripts, steering-wheel crest) in body_mesh AND the wheel-center crests inside each wheel_xx_mesh; hide LOGO1 primitives to de-badge. number_plate1 is the plate texture."
+      },
+      "tris": 235978,
+      "sizeBytes": 2702960,
+      "compression": "meshopt",
+      "suggestedSpec": "kaze (twin-turbo AWD GT)",
+      "notes": "Source had the left door posed open (node door_2) - reset to closed. Source wheels were 4-in-1 merged meshes (rims, tires, discs) - split per wheel by quadrant. Calipers ('brakes') stay on the body (they neither spin nor steer). Interior and small parts decimated (attribute-aware meshopt), body_main untouched."
+    },
+    {
+      "id": "porsche_930_turbo",
+      "file": "porsche_930_turbo.glb",
+      "role": "rival",
+      "make": "porsche",
+      "realModel": "911 Turbo (930), 1975-89",
+      "name": "FREE 1975 Porsche 911 (930) Turbo",
+      "source": "https://sketchfab.com/3d-models/free-1975-porsche-911-930-turbo-8568d9d14a994b9cae59499f0dbed21e",
+      "downloadUrl": "https://raw.githubusercontent.com/PacktPublishing/Learn-Three.js-Fourth-edition/d0073491c5ac19d46a37cc7742855499b01bb17f/source/assets/gltf/porsche/scene.gltf",
+      "license": "CC-BY-4.0",
+      "credit": "This work is based on \"FREE 1975 Porsche 911 (930) Turbo\" (https://sketchfab.com/3d-models/free-1975-porsche-911-930-turbo-8568d9d14a994b9cae59499f0dbed21e) by Karol Miklas (https://sketchfab.com/karolmiklas) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+      "author": "Lionsharp Studios (Karol Miklas)",
+      "authorUrl": "https://sketchfab.com/lionsharp",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.291,
+      "bounds": {
+        "min": [
+          -0.9471,
+          0,
+          -2.1455
+        ],
+        "max": [
+          0.9471,
+          1.6442,
+          2.1455
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.7586,
+          0.3144,
+          1.2276
+        ],
+        "fr": [
+          -0.7586,
+          0.3144,
+          1.2276
+        ],
+        "rl": [
+          0.7761,
+          0.3144,
+          -1.0441
+        ],
+        "rr": [
+          -0.7761,
+          0.3145,
+          -1.0441
+        ]
+      },
+      "wheelRadius": 0.3143,
+      "wheelRadii": {
+        "fl": 0.3142,
+        "fr": 0.3142,
+        "rl": 0.3144,
+        "rr": 0.3144
+      },
+      "wheelWidths": {
+        "fl": 0.2356,
+        "fr": 0.2356,
+        "rl": 0.2709,
+        "rr": 0.2709
+      },
+      "wheelsSeparate": true,
+      "wheelPivotAtCenter": true,
+      "paintMaterials": [
+        "paint"
+      ],
+      "glassMaterials": [
+        "glass"
+      ],
+      "headlightMaterials": [
+        "930_lights_front",
+        "930_lights_refraction"
+      ],
+      "taillightMaterials": [
+        "930_lights_rear"
+      ],
+      "logos": {
+        "materials": [
+          "930_stickers",
+          "930_wunderbaum",
+          "plate"
+        ],
+        "notes": "930_stickers = Porsche crest on the hood + dealer/'BRD' stickers (also the Lionsharp author sticker); 930_wunderbaum = 'Wunder-Baum' air-freshener trademark; plate = German plate 'S-KM 930'. Hide those three materials to de-badge."
+      },
+      "tris": 197545,
+      "sizeBytes": 3131296,
+      "compression": "meshopt",
+      "suggestedSpec": "akuma (big-turbo RWD)",
+      "notes": "Original Lionsharp/Karol Miklas work. Removed the baked ground-shadow plane and the semi-transparent 'coat' dirt shell (43k tris) that would tint in-game paint. Front wheels were posed steered - reset. Paint base color is near-black in the source (in-game paint replaces it). Has a tall roof antenna (bounds height 1.64 m includes it)."
+    },
+    {
+      "id": "bmw_e30_m3",
+      "file": "bmw_e30_m3.glb",
+      "role": "rival",
+      "make": "bmw",
+      "realModel": "M3 (E30), 1986-91",
+      "name": "[FREE] BMW M3 E30",
+      "source": "https://sketchfab.com/3d-models/free-bmw-m3-e30-ac3c7013434e403e8faff87948caf422",
+      "downloadUrl": "https://raw.githubusercontent.com/Monnte/car-dataset-generator/3948fed930db26e7728b7539fe7312bf7db11569/assets/models/bmw/scene.gltf",
+      "license": "CC-BY-4.0",
+      "credit": "This work is based on \"[FREE] BMW M3 E30\" (https://sketchfab.com/3d-models/free-bmw-m3-e30-ac3c7013434e403e8faff87948caf422) by Martin Trafas (https://sketchfab.com/Bexxie) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+      "author": "Martin Trafas (TinoD2)",
+      "authorUrl": "https://sketchfab.com/TinoD2",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.345,
+      "bounds": {
+        "min": [
+          -0.8686,
+          0,
+          -2.1725
+        ],
+        "max": [
+          0.8686,
+          1.3463,
+          2.1725
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.6946,
+          0.3104,
+          1.4036
+        ],
+        "fr": [
+          -0.6946,
+          0.3104,
+          1.4036
+        ],
+        "rl": [
+          0.7067,
+          0.3104,
+          -1.1774
+        ],
+        "rr": [
+          -0.7067,
+          0.3104,
+          -1.1774
+        ]
+      },
+      "wheelRadius": 0.3104,
+      "wheelRadii": {
+        "fl": 0.3104,
+        "fr": 0.3104,
+        "rl": 0.3104,
+        "rr": 0.3104
+      },
+      "wheelWidths": {
+        "fl": 0.249,
+        "fr": 0.249,
+        "rl": 0.2534,
+        "rr": 0.2534
+      },
+      "wheelsSeparate": true,
+      "wheelPivotAtCenter": true,
+      "paintMaterials": [
+        "BMW_E30_M3_PAINT"
+      ],
+      "glassMaterials": [
+        "BMW_E30_M3_WINDOWS"
+      ],
+      "headlightMaterials": [
+        "BMW_E30_M3_HEADLIGHT_LENS",
+        "BMW_E30_M3_HEADLIGHT_REFLECTOR"
+      ],
+      "taillightMaterials": [
+        "BMW_E30_M3_TAILLIGHT_LENS",
+        "BMW_E30_M3_TAILLIGHT_REFLECTOR_REAR"
+      ],
+      "logos": {
+        "materials": [
+          "BMW_E30_M3_EMBLEMS",
+          "BMW_E30_M3_RIM (texture region)",
+          "Brembo_Calipers (texture)"
+        ],
+        "notes": "BMW_E30_M3_EMBLEMS = hood/trunk roundels + M3 badges + M stripes (own material, hide it). The BBS rim texture atlas contains a BMW roundel center cap (replace that region of the RIM baseColor if needed). Brembo logo planes on the calipers were removed."
+      },
+      "tris": 117253,
+      "sizeBytes": 2048888,
+      "compression": "meshopt",
+      "suggestedSpec": "raiden (light RWD coupe)",
+      "notes": "Original Martin Trafas (TinoD2) Blender model; current Sketchfab profile is /TinoD2 (license.txt still says /Bexxie). Front wheels were posed steered - reset. Lens/reflector materials shared front+rear were split into head/tail copies (BMW_E30_M3_FRONT_SIGNAL_REFLECTOR = front amber signals)."
+    },
+    {
+      "id": "bmw_e46_m3",
+      "file": "bmw_e46_m3.glb",
+      "role": "rival",
+      "make": "bmw",
+      "realModel": "M3 Coupe (E46), 2000-06",
+      "name": "BMW M3 E46",
+      "source": "https://sketchfab.com/3d-models/bmw-m3-e46-f1b00ff37d504629b10031da32bc7497",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-119/f1b00ff37d504629b10031da32bc7497.glb",
+      "license": "CC-BY-4.0",
+      "credit": "This work is based on \"BMW M3 E46\" (https://sketchfab.com/3d-models/bmw-m3-e46-f1b00ff37d504629b10031da32bc7497) by M\u00e1rcio Meireles (https://sketchfab.com/marciomeireles) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+      "author": "M\u00e1rcio Meireles (MMC Works)",
+      "authorUrl": "https://sketchfab.com/marciomeireles",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.492,
+      "bounds": {
+        "min": [
+          -0.9501,
+          0,
+          -2.246
+        ],
+        "max": [
+          0.9501,
+          1.3688,
+          2.246
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.7286,
+          0.3207,
+          1.4799
+        ],
+        "fr": [
+          -0.7183,
+          0.322,
+          1.4816
+        ],
+        "rl": [
+          0.7306,
+          0.3203,
+          -1.249
+        ],
+        "rr": [
+          -0.7342,
+          0.3203,
+          -1.249
+        ]
+      },
+      "wheelRadius": 0.3203,
+      "wheelRadii": {
+        "fl": 0.3203,
+        "fr": 0.3203,
+        "rl": 0.3203,
+        "rr": 0.3203
+      },
+      "wheelWidths": {
+        "fl": 0.256,
+        "fr": 0.256,
+        "rl": 0.256,
+        "rr": 0.256
+      },
+      "wheelsSeparate": true,
+      "wheelPivotAtCenter": true,
+      "paintMaterials": [
+        "e46_paint"
+      ],
+      "glassMaterials": [
+        "e46_window_glass",
+        "e46_window_glass_tinted"
+      ],
+      "headlightMaterials": [
+        "headlight_cover_glass",
+        "e46_headlight_bulb",
+        "e46_headlight_angel_eyes"
+      ],
+      "taillightMaterials": [
+        "e46_taillight_cover_red",
+        "e46_taillight_led",
+        "e46_taillight_frame_red"
+      ],
+      "logos": {
+        "materials": [],
+        "notes": "No logo textures. Roundel badges, if present, are untextured geometry in the paint/trim materials."
+      },
+      "tris": 362254,
+      "sizeBytes": 2102476,
+      "compression": "meshopt",
+      "suggestedSpec": "any RWD coupe (rival)",
+      "notes": "Original Blender work by Marcio Meireles (MMC Works). Source 847k tris; paint decimated with attribute-aware meshopt (normals preserved), BBS rims/discs decimated. Front wheel group was posed steered - reset. Calipers (e46_calipers) stay on the body. Fetched from the Objaverse mirror of the original Sketchfab download."
+    },
+    {
+      "id": "bmw_m4_csl",
+      "file": "bmw_m4_csl.glb",
+      "role": "rival",
+      "make": "bmw",
+      "realModel": "M4 CSL (G82), 2023",
+      "name": "BMW M4csl",
+      "source": "https://sketchfab.com/3d-models/bmw-m4csl-b53782a00cc240a191d5d7d005af1423",
+      "downloadUrl": "https://raw.githubusercontent.com/volodya-rua/NetherFlow/072a1943fb555b3d8a7b4b5575868bd1a38061fa/race/cars/m4-csl.glb",
+      "license": "CC-BY-4.0",
+      "credit": "This work is based on \"BMW M4csl\" (https://sketchfab.com/3d-models/bmw-m4csl-b53782a00cc240a191d5d7d005af1423) by Mpgs Studios (https://sketchfab.com/mpgs.studio) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+      "author": "Mpgs Studios (mpgs.studio)",
+      "authorUrl": "https://sketchfab.com/mpgs.studio",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.801,
+      "bounds": {
+        "min": [
+          -1.0311,
+          0,
+          -2.4005
+        ],
+        "max": [
+          1.0311,
+          1.4033,
+          2.4005
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.8073,
+          0.3408,
+          1.5159
+        ],
+        "fr": [
+          -0.8061,
+          0.3406,
+          1.5158
+        ],
+        "rl": [
+          0.8073,
+          0.3408,
+          -1.3235
+        ],
+        "rr": [
+          -0.8073,
+          0.3408,
+          -1.3236
+        ]
+      },
+      "wheelRadius": 0.3406,
+      "wheelRadii": {
+        "fl": 0.3406,
+        "fr": 0.3406,
+        "rl": 0.3406,
+        "rr": 0.3406
+      },
+      "wheelWidths": {
+        "fl": 0.2696,
+        "fr": 0.2719,
+        "rl": 0.2696,
+        "rr": 0.2696
+      },
+      "wheelsSeparate": true,
+      "wheelPivotAtCenter": true,
+      "paintMaterials": [
+        "car_paint"
+      ],
+      "glassMaterials": [
+        "window_glass"
+      ],
+      "headlightMaterials": [
+        "headlight_glass",
+        "headlight_inner",
+        "headlight_lens"
+      ],
+      "taillightMaterials": [
+        "taillight_glass",
+        "taillight_lens",
+        "taillight_red"
+      ],
+      "logos": {
+        "materials": [],
+        "notes": "The fetched copy has no textures, so no texture logos; any roundel/kidney badge is untextured geometry (not isolated)."
+      },
+      "tris": 337195,
+      "sizeBytes": 1954832,
+      "compression": "meshopt",
+      "suggestedSpec": "akuma (twin-turbo I6 RWD)",
+      "notes": "CC-BY original by Mpgs Studios (Sketchfab says 'made in blender', tag noai). The scriptable copy is a meshopt/quantized re-export shipped in the GPL-3.0 NetherFlow repo (which credits the model as CC-BY 4.0 by Mpgs Studios); the GPL covers that repo's code, the model license is the author's CC-BY. Textures were already stripped there; normals were re-welded from the original corner normals; paint decimated with attribute-aware meshopt. Weaker provenance than the others - drop it first if in doubt."
+    }
+  ]
+}

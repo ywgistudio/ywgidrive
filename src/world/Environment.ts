@@ -21,10 +21,6 @@ const ENV_STRENGTH: Record<string, number> = {
   terrain: 0.12,
   trees: 0.08,
   water: 0.9,
-  track_road: 0.42,
-  track_sidewalk: 0.3,
-  track_tunnelWall: 0.12,
-  track_tunnelCeil: 0.05,
   containers: 0.15,
   cranes: 0.15,
 };
@@ -108,7 +104,7 @@ export class Environment {
     this.scene.environmentIntensity = 0.32;
     this.scene.environmentRotation.set(0, 1.1, 0);
     this.scene.background = null;
-    this.scene.fog = new THREE.FogExp2(FOG_COLOR.getHex(), 1.0 / Math.max(700, this.quality.drawDistance * 0.95));
+    this.scene.fog = new THREE.FogExp2(FOG_COLOR.getHex(), 1.0 / Math.max(600, this.quality.drawDistance * 0.62));
     await yieldFrame();
 
     const tex: TrackTextures = {
@@ -121,23 +117,42 @@ export class Environment {
     const t = this.track;
     this.grid = new TrackGrid(t);
     this.terrain = new Terrain(t, this.grid);
-    this.lamps = new LampLighting(t);
+    this.city = new City(t, this.grid, this.terrain, this.quality.buildingDensity);
+    this.lamps = new LampLighting(t, this.city.yardLamps());
     this.zebras = this.pickZebras();
     progress(0.5);
     await yieldFrame();
 
     // ---------------------------------------------------------------- track surfaces
+    // every chunk is bound to the nearest reflection probe (baked from the finished city below)
     const tm = new TrackMesh(t, { terrainHeight: (x, z) => this.terrain.height(x, z) });
-    const mats = createTrackMaterials(t, tex, this.lamps, this.zebras);
-    this.materials.push(...Object.values(mats));
+    this.probes = this.probeLayout();
+    const probeMats = this.probes.map(() => createTrackMaterials(t, tex, this.lamps, this.zebras));
+    for (const pm of probeMats) this.materials.push(...Object.values(pm));
     for (const chunk of tm.chunks) {
+      const road = chunk.geometries.road!;
+      const c = road.boundingSphere!.center;
+      let tunnelCount = 0;
+      const a = chunk.index * 100;
+      for (let i = a; i < Math.min(t.count, a + 100); i++) tunnelCount += t.tunnel[i];
+      let best = 0;
+      let bestD = Infinity;
+      this.probes.forEach((p, k) => {
+        if (p.tunnel !== tunnelCount > 50) return;
+        const d = p.pos.distanceToSquared(c);
+        if (d < bestD) {
+          bestD = d;
+          best = k;
+        }
+      });
       for (const k of Object.keys(chunk.geometries) as SurfaceKind[]) {
-        const m = new THREE.Mesh(chunk.geometries[k]!, mats[k]);
+        const m = new THREE.Mesh(chunk.geometries[k]!, probeMats[best][k]);
         m.name = `track_${k}_${chunk.index}`;
         m.receiveShadow = k === 'road' || k === 'sidewalk';
         this.root.add(m);
       }
     }
+    this.probeMats = probeMats;
     progress(0.6);
     await yieldFrame();
 
@@ -148,7 +163,6 @@ export class Environment {
     await yieldFrame();
 
     // ---------------------------------------------------------------- city
-    this.city = new City(t, this.grid, this.terrain, this.quality.buildingDensity);
     for (const o of this.city.build(this.lamps)) this.root.add(o);
     progress(0.84);
     await yieldFrame();
@@ -187,7 +201,60 @@ export class Environment {
     });
 
     this.scene.add(this.root);
+    await yieldFrame();
+    this.bakeProbes();
     progress(1);
+  }
+
+  probes: { name: string; pos: THREE.Vector3; tunnel: boolean; tex: THREE.Texture | null }[] = [];
+  private probeMats: Record<SurfaceKind, THREE.MeshStandardMaterial>[] = [];
+
+  private probeLayout() {
+    const t = this.track;
+    const at = (s: number, up: number, lat = 0) => {
+      const f = t.frameAt(s);
+      return f.pos.clone().addScaledVector(f.up, up).addScaledVector(f.right, lat);
+    };
+    return [
+      { name: 'downtown', pos: at(START_S + 120, 3), tunnel: false, tex: null },
+      { name: 'downtownWest', pos: at(3330, 3), tunnel: false, tex: null },
+      { name: 'boulevard', pos: at(860, 3), tunnel: false, tex: null },
+      { name: 'harbor', pos: at(1350, 1.2, -26), tunnel: false, tex: null },
+      { name: 'docks', pos: at(1760, 3), tunnel: false, tex: null },
+      { name: 'tunnel', pos: at(2250, 3), tunnel: true, tex: null },
+      { name: 'hills', pos: at(2760, 4), tunnel: false, tex: null },
+    ] as { name: string; pos: THREE.Vector3; tunnel: boolean; tex: THREE.Texture | null }[];
+  }
+
+  /** Render a cube capture of the finished city at every probe and use it for local reflections. */
+  private bakeProbes() {
+    const size = this.quality.envCubeSize >= 128 ? 256 : this.quality.envCubeSize > 0 ? 128 : 64;
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const rt = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType });
+    const cam = new THREE.CubeCamera(0.5, 5000, rt);
+    const water = this.root.getObjectByName('water');
+    const intensity: Partial<Record<SurfaceKind, number>> = { road: 0.85, sidewalk: 0.6, concrete: 0.35, metal: 0.8, tunnelWall: 0.7, tunnelCeil: 0.15, retain: 0.3 };
+    this.probes.forEach((p, k) => {
+      cam.position.copy(p.pos);
+      cam.updateMatrixWorld(true);
+      cam.update(this.renderer, this.scene);
+      p.tex = pmrem.fromCubemap(rt.texture).texture;
+      const mats = this.probeMats[k];
+      for (const kind of Object.keys(mats) as SurfaceKind[]) {
+        const m = mats[kind];
+        m.envMap = p.tex;
+        m.envMapIntensity = intensity[kind] ?? 0.4;
+      }
+      this.textures.push(p.tex);
+      if (p.name === 'harbor' && water) {
+        const wm = (water as THREE.Mesh).material as THREE.MeshStandardMaterial;
+        wm.envMap = p.tex;
+        wm.envMapIntensity = 1.0;
+        wm.envMapRotation.set(0, 0, 0);
+      }
+    });
+    rt.dispose();
+    pmrem.dispose();
   }
 
   private pickZebras(): number[] {
@@ -205,6 +272,20 @@ export class Environment {
       if (out.length >= 6) break;
     }
     return out;
+  }
+
+  /** Nearest baked reflection probe (PMREM texture) — a cheap, good-looking envMap for car paint. */
+  probeAt(pos: THREE.Vector3): THREE.Texture | null {
+    let best: THREE.Texture | null = null;
+    let bestD = Infinity;
+    for (const p of this.probes) {
+      const d = p.pos.distanceToSquared(pos) * (p.tunnel ? 0.25 : 1);
+      if (p.tex && d < bestD) {
+        bestD = d;
+        best = p.tex;
+      }
+    }
+    return best ?? this.envMap;
   }
 
   /** 0..5 red columns lit, -1 green (GO), -2 all dark. */

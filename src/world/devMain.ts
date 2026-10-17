@@ -23,7 +23,10 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(num('fov', 62), W / H, 0.1, 6000);
 const track = new Track();
 const env = new Environment(scene, renderer, track, QUALITY[q]);
+(window as any).__env = env;
 const info = document.getElementById('info')!;
+(window as any).__scene = scene;
+(window as any).__THREE = THREE;
 
 // stand-in headlights so the road reads like the game camera would see it
 const head = new THREE.SpotLight(0xfff1dd, 900, 120, 0.42, 0.5, 2);
@@ -75,7 +78,11 @@ env
       placeCamera();
       controls.target.copy(camera.position).addScaledVector(camera.getWorldDirection(fwd), 10);
       env.setStartLights(num('lights', -2));
+      renderer.info.autoReset = false;
       renderer.info.reset();
+      renderer.render(scene, camera);
+      (window as any).__viewStats = { calls: renderer.info.render.calls, tris: renderer.info.render.triangles };
+      renderer.info.autoReset = true;
     };
     let frames = 0;
     const clock = new THREE.Clock();

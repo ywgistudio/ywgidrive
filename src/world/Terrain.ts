@@ -33,6 +33,7 @@ export class Terrain {
     this.minZ = c - 800;
     this.maxZ = d + 800;
     this.center.set((a + b) / 2, (c + d) / 2);
+    grid.buildField(this.minX, this.minZ, this.maxX, this.maxZ, 150);
   }
 
   /** 0..1 how much (x,z) is harbor water. */
@@ -65,6 +66,11 @@ export class Terrain {
   height(x: number, z: number): number {
     const t = this.track;
     const R = 55;
+    if (this.grid.distApprox(x, z) > R * 2.2 + 6) {
+      const bgOnly = this.background(x, z);
+      const b = this.basin(x, z);
+      return b > 0 ? bgOnly * (1 - b) + (WATER_LEVEL - 5) * b : bgOnly;
+    }
     const list = this.grid.within(x, z, R * 2.2, this.near);
     let ws = 0;
     let ys = 0;
@@ -199,7 +205,7 @@ export class Terrain {
       new THREE.RingGeometry(1, 9000, 32, 1).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0x050409 }),
     );
-    far.position.set(this.center.x, -0.6, this.center.y);
+    far.position.set(this.center.x, -9, this.center.y);
     far.scale.setScalar(1);
     far.name = 'farGround';
     meshes.push(far);

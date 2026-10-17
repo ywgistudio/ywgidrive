@@ -47,19 +47,18 @@ export function buildWater(terrain: Terrain, grid: TrackGrid, lamps: LampLightin
       uniforms: { uTime: worldUniforms.uTime },
       vertexHeader: 'varying vec3 vWW;',
       vertex: [{ after: 'begin_vertex', code: 'vWW = (modelMatrix * vec4(transformed, 1.0)).xyz;' }],
-      fragmentHeader: 'uniform float uTime;\nvarying vec3 vWW;\n' + GLSL_NOISE,
+      fragmentHeader: 'uniform float uTime;\nvarying vec3 vWW;\n' + GLSL_NOISE + `\nfloat waterH(vec2 p, float t) { return wNoise(p * vec2(0.08, 0.3) + vec2(t * 0.06, t * 0.1)) + 0.45 * wNoise(p * 0.55 - vec2(t * 0.2, -t * 0.13)) + 0.12 * wNoise(p * 1.7 + t * 0.4); }`,
       fragment: [
         {
           after: 'normal_fragment_begin',
           code: /* glsl */ `
           {
             vec2 p = vWW.xz;
-            float t = uTime;
             float e = 0.35;
-            float h0 = wNoise(p * 0.18 + vec2(t * 0.11, t * 0.05)) + 0.5 * wNoise(p * 0.55 - vec2(t * 0.2, -t * 0.13)) + 0.25 * wNoise(p * 1.7 + t * 0.4);
-            float hx = wNoise((p + vec2(e, 0.0)) * 0.18 + vec2(t * 0.11, t * 0.05)) + 0.5 * wNoise((p + vec2(e, 0.0)) * 0.55 - vec2(t * 0.2, -t * 0.13)) + 0.25 * wNoise((p + vec2(e, 0.0)) * 1.7 + t * 0.4);
-            float hz = wNoise((p + vec2(0.0, e)) * 0.18 + vec2(t * 0.11, t * 0.05)) + 0.5 * wNoise((p + vec2(0.0, e)) * 0.55 - vec2(t * 0.2, -t * 0.13)) + 0.25 * wNoise((p + vec2(0.0, e)) * 1.7 + t * 0.4);
-            vec3 wn = normalize(vec3(-(hx - h0) / e * 0.35, 1.0, -(hz - h0) / e * 0.35));
+            float h0 = waterH(p, uTime);
+            float hx = waterH(p + vec2(e, 0.0), uTime);
+            float hz = waterH(p + vec2(0.0, e), uTime);
+            vec3 wn = normalize(vec3(-(hx - h0) / e * 0.14, 1.0, -(hz - h0) / e * 0.14));
             normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
           }
           `,

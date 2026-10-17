@@ -6,7 +6,7 @@ import { buildTrackColliders } from '../world/TrackColliders';
 import { Environment } from '../world/Environment';
 import { Vehicle, type Assists } from '../vehicle/Vehicle';
 import { CARS, type CarSpec } from '../vehicle/CarSpec';
-import { CarModels, CarVisual, makeTrafficVisual, type CarModelEntry } from '../vehicle/CarVisual';
+import { CarModels, CarVisual, makeTrafficVisual, modelHalfExtents, type CarModelEntry } from '../vehicle/CarVisual';
 import { Input } from '../core/Input';
 import { ChaseCamera } from '../core/ChaseCamera';
 import { LampPool } from './LampPool';
@@ -16,6 +16,7 @@ import { createRenderer, applyPixelRatio } from '../render/Renderer';
 import { PostFX } from '../render/PostFX';
 import { Effects } from '../fx/Effects';
 import { UI, type HudData, type ResultRow } from '../ui/UI';
+import { Credits } from '../ui/Credits';
 import { AudioSystem, type VehicleSound } from '../audio/AudioSystem';
 import { RacerAI, type AIObstacle } from '../ai/RacerAI';
 import { Traffic, type TrafficCarKind } from '../ai/Traffic';
@@ -43,6 +44,8 @@ interface CarEntity {
   wheelCenters: THREE.Vector3[];
   steer: number[];
   spin: number[];
+  prevVel: THREE.Vector3;
+  lean: THREE.Vector2;
 }
 
 const _v = new THREE.Vector3();
@@ -71,6 +74,7 @@ export class RaceGame {
   models = new CarModels();
   effects!: Effects;
   ui!: UI;
+  credits!: Credits;
   audio = new AudioSystem();
   input = new Input();
   chase!: ChaseCamera;
@@ -129,15 +133,24 @@ export class RaceGame {
     this.env = new Environment(this.scene, this.renderer, this.track, q);
     await this.env.load((p) => prog(0.12 + p * 0.5, 'Building the city'));
     prog(0.64, 'Rolling out the cars');
+    const used = new Set(CARS.map((c) => c.model));
+    this.models.sportsFilter = (e) => used.has(e.file);
     await this.models.load((p) => prog(0.64 + p * 0.26, 'Rolling out the cars'));
     this.trafficEntries = this.models.traffic;
     this.trafficKinds = this.trafficEntries.map((e) => ({
       id: e.id,
-      halfExtents: trafficHalfExtents(e),
+      halfExtents: modelHalfExtents(this.models, e).toArray() as [number, number, number],
       mass: (e as unknown as { massKg?: number }).massKg ?? 1450,
       maxSpeed: (e as unknown as { maxSpeed?: number }).maxSpeed ?? 17,
     }));
 
+    this.credits = new Credits(this.uiRoot);
+    this.credits.setLines([
+      ...this.models.credits(),
+      'Music: "Hot Roadway" by MintoDog (CC0). Sound effects: Kenney, BigSoundBank, OpenGameArt contributors (CC0; CC-BY 3.0 items credited in audio CREDITS).',
+      'Environment: Poly Haven and ambientCG (CC0) textures and HDRIs.',
+    ]);
+    this.credits.showButton(false);
     prog(0.92, 'Tuning the lights');
     this.lampPool = new LampPool(this.scene, this.track, q.dynamicLamps);
     this.effects = new Effects(this.scene, q);
@@ -179,6 +192,7 @@ export class RaceGame {
   // ---------------------------------------------------------------- menus
   private goMenu() {
     this.mode = 'menu';
+    this.credits.showButton(true);
     this.clearRace();
     this.placeMenuCar(this.selectedCar);
     this.post.setMenuMode(true);
@@ -242,6 +256,7 @@ export class RaceGame {
     if (entry) {
       visual = new CarVisual(this.models, entry, this.visualOpts(spec, true));
       object = visual.object;
+      hideBadges(object, entry);
     } else object = makePlaceholderCar(spec);
     const f = this.track.frameAt(START_S + 40);
     object.position.copy(f.pos).addScaledVector(f.up, spec.wheelRadius + 0.02 + (spec.cgHeight - spec.wheelRadius));
@@ -293,6 +308,7 @@ export class RaceGame {
   }
 
   startRace() {
+    this.credits.showButton(false);
     this.clearRace();
     if (this.menuCar) {
       this.scene.remove(this.menuCar.object);
@@ -384,6 +400,7 @@ export class RaceGame {
     if (entry) {
       visual = new CarVisual(this.models, entry, this.visualOpts(spec, player, paint));
       object = visual.object;
+      hideBadges(object, entry);
     } else object = makePlaceholderCar(spec);
     this.scene.add(object);
     const e: CarEntity = {
@@ -403,6 +420,8 @@ export class RaceGame {
       wheelCenters: [0, 1, 2, 3].map(() => new THREE.Vector3()),
       steer: [0, 0, 0, 0],
       spin: [0, 0, 0, 0],
+      prevVel: new THREE.Vector3(),
+      lean: new THREE.Vector2(),
     };
     for (const h of e.colliderHandles) this.colliderOwner.set(h, e);
     this.cars.push(e);
@@ -414,7 +433,14 @@ export class RaceGame {
     const paints = [0xd8d8d8, 0x202020, 0x8a1b1b, 0x1b3a8a, 0xe8c547, 0x5a5f66, 0xf2f2f2, 0x2c5e3a];
     const kindStr = (entry as unknown as { kind?: string }).kind;
     const paint = kindStr === 'taxi' ? 0xf2c400 : paints[(Math.random() * paints.length) | 0];
-    return makeTrafficVisual(this.models, entry, paint);
+    const inner = makeTrafficVisual(this.models, entry, kindStr === 'taxi' || kindStr === 'bus' ? undefined : paint);
+    const half = inner.userData.halfExtents as THREE.Vector3;
+    inner.position.y = half.y;
+    const wrap = new THREE.Group();
+    wrap.add(inner);
+    wrap.userData.setBrake = inner.userData.setBrake;
+    wrap.userData.dispose = inner.userData.dispose;
+    return wrap;
   }
 
   pause() {
@@ -645,11 +671,18 @@ export class RaceGame {
         c.vehicle.input.handbrake = 1;
         c.vehicle.input.throttle = 0.35 + 0.3 * Math.sin(this.time * 3 + c.id); // rev on the grid
       }
-      if (c.ai.needsReset) this.resetCar(c);
+      if (c.ai.needsReset) {
+        const spot = c.ai.findResetSpot(obstacles.filter((o) => o.position !== c.vehicle.position));
+        const f = this.track.frameAt(spot.s);
+        const pos = f.pos.clone().addScaledVector(f.right, spot.lateral).addScaledVector(f.up, c.spec.cgHeight + 0.4);
+        this.traffic?.clearAround(pos, 10);
+        c.vehicle.reset(pos, Vehicle.quatFromFrame(f.tangent, f.up));
+        if (race.started) c.vehicle.gear = 1;
+        c.ai.onReset();
+      }
     }
 
     for (const c of this.cars) c.vehicle.update(dt);
-    this.traffic?.update(dt, this.player?.vehicle.position ?? this.chase.camera.position, this.cars.map((c) => c.vehicle));
 
     // fixed-step physics
     this.acc += dt;
@@ -671,6 +704,10 @@ export class RaceGame {
     }
     if (steps >= 12) this.acc = 0;
     const alpha = this.acc / PHYSICS_DT;
+    if (this.traffic) {
+      this.traffic.update(dt, this.player?.vehicle.position ?? this.chase.camera.position, this.cars.map((c) => c.vehicle), alpha);
+      for (const t of this.traffic.cars) (t.object.userData.setBrake as ((b: number) => void) | undefined)?.((t as unknown as { braking?: boolean }).braking ? 1 : 0);
+    }
 
     race.update(dt);
 
@@ -716,11 +753,14 @@ export class RaceGame {
       const b = this.colliderOwner.get(h2);
       const impulse = ev.totalForceMagnitude() * PHYSICS_DT; // N*s
       const owner = a ?? b;
-      if (!owner) {
-        // traffic vs traffic/world: let Traffic handle its own crash state
-        return;
+      if (this.traffic) {
+        if (this.traffic.colliderToCar(h1) >= 0) this.traffic.notifyImpact(h1, impulse);
+        if (this.traffic.colliderToCar(h2) >= 0) this.traffic.notifyImpact(h2, impulse);
       }
+      if (!owner) return;
       const other = a ? h2 : h1;
+      const tIdx = this.traffic ? this.traffic.colliderToCar(other) : -1;
+      if (tIdx >= 0 && owner === this.player) this.nearMiss.notifyContact(tIdx);
       const isStatic = !this.colliderOwner.has(other) && (this.traffic?.colliderToCar(other) ?? -1) < 0;
       const mass = owner.spec.mass;
       const dv = impulse / mass; // m/s velocity change
@@ -773,6 +813,18 @@ export class RaceGame {
     }
     const braking = Math.max(v.input.brake * (v.gear === -1 ? 0 : 1), v.gear === -1 ? v.input.throttle : 0);
     if (c.visual) {
+      // exaggerate body roll/pitch from local accelerations (physics roll is realistic but subtle)
+      const dtv = 1 / 60;
+      _v.subVectors(v.velocity, c.prevVel).divideScalar(dtv);
+      c.prevVel.copy(v.velocity);
+      _v2.set(1, 0, 0).applyQuaternion(c.renderQuat);
+      const latA = THREE.MathUtils.clamp(_v.dot(_v2), -20, 20);
+      const lonA = THREE.MathUtils.clamp(_v.dot(v.forward), -20, 20);
+      const grounded = v.groundedWheels >= 2;
+      c.lean.x += ((grounded ? latA * 0.0055 : 0) - c.lean.x) * 0.12;
+      c.lean.y += ((grounded ? -lonA * 0.0045 : 0) - c.lean.y) * 0.12;
+      c.visual.setBodyLean(c.lean.x, c.lean.y);
+      c.visual.updateLod(this.chase.camera.position);
       c.visual.updateWheels(c.wheelCenters, c.steer, c.spin);
       c.visual.setLights({ brake: braking, reverse: v.gear === -1, headlights: true, nitro: v.boosting });
     } else {
@@ -882,6 +934,18 @@ export class RaceGame {
     };
     this.ui.updateHud(hud);
   }
+}
+
+/** Strip manufacturer badges/logos from a car model (trademarks). */
+function hideBadges(root: THREE.Object3D, entry: CarModelEntry) {
+  const re = /logo|badge|emblem|brand|wordmark|sticker|wunderbaum/i;
+  const listed = new Set(((entry as unknown as { logos?: { materials?: string[] } }).logos?.materials ?? []).filter((n) => !/plate/i.test(n)));
+  root.traverse((o) => {
+    const m = o as THREE.Mesh;
+    if (!m.isMesh) return;
+    const mats = Array.isArray(m.material) ? m.material : [m.material];
+    if (re.test(m.name) || mats.some((x) => x && (re.test(x.name) || listed.has(x.name)))) m.visible = false;
+  });
 }
 
 function trafficHalfExtents(e: CarModelEntry): [number, number, number] {

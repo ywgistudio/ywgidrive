@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Track } from '../track/Track';
+import type { Track, Lamp } from '../track/Track';
 import type { Patch } from './ShaderPatch';
 
 /** Number of lamp slots evaluated per fragment. */
@@ -25,8 +25,14 @@ export class LampLighting {
   readonly nearTex: THREE.DataTexture;
   readonly uniforms: Record<string, THREE.IUniform>;
 
-  constructor(readonly track: Track) {
-    const lamps = track.lamps;
+  readonly all: Lamp[];
+  /** sampleIdx of the first virtual sample (extra lamp k uses extraBase + k) */
+  readonly extraBase: number;
+
+  /** `extra` lamps (yard floodlights etc.) are lit the same way as the circuit's streetlights. */
+  constructor(readonly track: Track, extra: Lamp[] = []) {
+    const lamps = [...track.lamps, ...extra];
+    this.all = lamps;
     const n = lamps.length;
     const rows = Math.ceil(n / POS_W);
     const pos = new Float32Array(POS_W * rows * 4);
@@ -40,7 +46,9 @@ export class LampLighting {
 
     // near list: lamps whose range reaches within ~14m of the sample (covers the corridor + sidewalks)
     const count = track.count;
-    const texels = count * (LAMP_SLOTS / 4);
+    this.extraBase = count;
+    const rowsTotal = count + extra.length;
+    const texels = rowsTotal * (LAMP_SLOTS / 4);
     const nrows = Math.ceil(texels / NEAR_W);
     const near = new Float32Array(NEAR_W * nrows * 4).fill(-1);
     const cand: { d: number; i: number }[] = [];
@@ -58,6 +66,17 @@ export class LampLighting {
       cand.sort((a, b) => a.d - b.d);
       for (let k = 0; k < Math.min(LAMP_SLOTS, cand.length); k++) near[i * LAMP_SLOTS + k] = cand[k].i;
     }
+    // virtual samples: one per extra lamp, listing it and its neighbours (for yard props etc.)
+    extra.forEach((e, k) => {
+      cand.length = 0;
+      lamps.forEach((L, li) => {
+        const d = Math.hypot(L.pos.x - e.pos.x, L.pos.z - e.pos.z);
+        if (d < L.range + 30) cand.push({ d: d - L.range, i: li });
+      });
+      cand.sort((a, b) => a.d - b.d);
+      const row = count + k;
+      for (let j = 0; j < Math.min(LAMP_SLOTS, cand.length); j++) near[row * LAMP_SLOTS + j] = cand[j].i;
+    });
     this.nearTex = makeTex(near, NEAR_W, nrows);
 
     this.uniforms = {

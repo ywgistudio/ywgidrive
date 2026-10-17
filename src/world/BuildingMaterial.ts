@@ -49,8 +49,8 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
         flat varying vec4 vSeed;
         ${GLSL_NOISE}
         vec3 winPalette(float h, float hue) {
-          vec3 warm = vec3(1.0, 0.5, 0.2);
-          vec3 warm2 = vec3(1.0, 0.68, 0.38);
+          vec3 warm = vec3(1.0, 0.42, 0.13);
+          vec3 warm2 = vec3(1.0, 0.62, 0.3);
           vec3 cool = vec3(0.5, 0.66, 1.0);
           vec3 fluo = vec3(0.7, 0.95, 0.8);
           vec3 c = h < 0.4 ? warm : (h < 0.65 ? warm2 : (h < 0.85 ? fluo : cool));
@@ -101,6 +101,13 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
             vec2 hi = vec2(1.0) - lo * vec2(1.0, style < 1.5 ? 0.6 : 0.9);
             float area = (hi.x - lo.x) * (hi.y - lo.y);
             float win = mix(rect(cf, lo, hi, aa), area, lod);
+            // window frame: mullion + transom inside the opening (offices / residential)
+            vec2 wl = (cf - lo) / max(hi - lo, vec2(1e-3));
+            float mull = 0.0;
+            if (style < 0.5 || (style > 1.5 && style < 2.5)) {
+              mull = (1.0 - smoothstep(0.0, 0.035 + aa.x * 2.0, abs(wl.x - 0.5))) + (1.0 - smoothstep(0.0, 0.03 + aa.y * 2.0, abs(wl.y - 0.72)));
+              mull = clamp(mull, 0.0, 1.0) * (1.0 - lod);
+            }
             float aboveGround = step(gh, fc.y) * step(fc.y, vBS.y - (style < 1.5 ? 1.2 : 0.6));
             // floors are lit coherently (offices) with individual variation
             float hf = wHash12(vec2(ci.y + seed * 13.0, faceId));
@@ -108,9 +115,13 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
             float litFrac = vStyle.z;
             float lit = step(hw, litFrac * (0.55 + hf * 0.9));
             if (style > 3.5 && style < 4.5) lit *= step(0.35, hf);
-            float inten = (0.35 + 1.1 * pow(wHash12(ci * 1.7 + seed), 2.0)) * (0.6 + 0.55 * cf.y);
+            float inten = (0.35 + 1.1 * pow(wHash12(ci * 1.7 + seed), 2.0)) * (0.55 + 0.6 * wl.y);
+            // ceiling light band + interior clutter silhouettes
+            inten *= 1.0 + 0.6 * smoothstep(0.78, 0.9, wl.y) * (1.0 - lod);
+            float clutter = step(wl.y, 0.18 + 0.32 * wHash12(vec2(floor(wl.x * 3.0 + 0.5 * wHash12(ci)), ci.y + ci.x * 7.0 + seed))) * step(0.45, wHash12(ci + seed * 9.0));
+            inten *= mix(1.0, 0.35, clutter * (1.0 - lod));
             // blinds: horizontal slats on some windows
-            float blinds = step(0.7, wHash12(ci * 2.3 + seed * 5.0));
+            float blinds = step(0.8, wHash12(ci * 2.3 + seed * 5.0));
             inten *= mix(1.0, 0.55 + 0.45 * step(0.5, fract(cf.y * 9.0)), blinds * (1.0 - lod));
             vec3 wc = winPalette(wHash12(ci + seed * 3.0 + 0.5), vStyle.y);
             // TVs / flicker
@@ -119,8 +130,11 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
             // distance fallback: average glow so far towers don't shimmer
             float avgLit = litFrac * 0.75;
             vec3 avgCol = winPalette(0.5, vStyle.y);
-            vec3 glow = mix(wc * inten * lit, avgCol * 0.75 * avgLit, far);
-            float winMask = win * aboveGround;
+            vec3 glow = mix(wc * inten * lit, avgCol * 0.3 * avgLit, far);
+            float winMask = win * aboveGround * (1.0 - mull);
+            // dim curtains glow in some unlit windows
+            float curtain = (1.0 - lit) * step(0.75, wHash12(ci * 5.1 + seed)) * 0.06;
+            glow += vec3(1.0, 0.55, 0.3) * curtain * (1.0 - far);
             if (style > 0.5 && style < 1.5) {
               // glass curtain wall: dark reflective glass everywhere, mullions
               alb = mix(vec3(0.015, 0.02, 0.03), wallTint * 0.5, 1.0 - win);
@@ -154,6 +168,31 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
                 bRough = 0.5;
                 bMetal = 0.6;
               }
+            }
+            // pilasters between window columns
+            float pil = 1.0 - smoothstep(0.02, 0.06 + aa.x, min(cf.x, 1.0 - cf.x));
+            if (style < 0.5 || style > 1.5) alb *= 1.0 + pil * 0.5 * (1.0 - lod) * (1.0 - winMask);
+            // warehouses: roller doors with sodium bay lights
+            if (style > 2.5 && style < 3.5 && fc.y < 6.0) {
+              float bayW = 8.0;
+              float nb = max(1.0, floor(faceW / bayW));
+              float bx = fc.x / (faceW / nb);
+              float bi = floor(bx);
+              float bfx = fract(bx);
+              float hb = wHash12(vec2(bi, seed + faceId * 3.0));
+              float door = rect(vec2(bfx, fc.y), vec2(0.18, 0.0), vec2(0.82, 4.6), vec2(fwidth(bx), fwidth(fc.y)) * 1.2);
+              float open = step(0.82, hb);
+              float rib = 0.5 + 0.5 * sin(fc.y * 30.0);
+              alb = mix(alb, mix(vec3(0.09, 0.09, 0.1) * (0.75 + 0.25 * rib), vec3(0.01), open), door);
+              bRough = mix(bRough, 0.45, door);
+              bMetal = mix(bMetal, 0.7, door * (1.0 - open));
+              bEmisCol += vec3(1.0, 0.6, 0.25) * door * open * 1.4 * smoothstep(0.0, 4.0, fc.y);
+              // bay lamp above each door
+              float lampM = rect(vec2(bfx, fc.y), vec2(0.45, 5.05), vec2(0.55, 5.35), vec2(fwidth(bx), fwidth(fc.y)));
+              bEmisCol += vec3(1.0, 0.55, 0.2) * lampM * 9.0 * step(0.25, hb);
+              // light spill below the lamp
+              float spill = exp(-pow((bfx - 0.5) * 3.0, 2.0)) * smoothstep(5.2, 2.0, fc.y) * step(0.25, hb);
+              alb += vec3(0.25, 0.13, 0.04) * spill * 0.35;
             }
             // horizontal floor slabs give towers structure
             float slab = 1.0 - smoothstep(0.0, 0.06 + aa.y, abs(fract((fc.y - gh) / fh) - 0.02));

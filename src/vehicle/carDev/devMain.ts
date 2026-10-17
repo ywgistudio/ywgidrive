@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { EffectComposer, RenderPass, EffectPass, BloomEffect, ToneMappingEffect, ToneMappingMode, SMAAEffect } from 'postprocessing';
-import { CarModels } from '../CarModels';
+import { CarModels, type CarModelEntry } from '../CarModels';
 import { CarVisual, makeTrafficVisual } from '../CarVisual';
 
 const params = new URLSearchParams(location.search);
@@ -109,11 +109,21 @@ async function main() {
     scene.environmentIntensity = Number(params.get('env') ?? '0.15');
   }
   const models = new CarModels('/assets/cars/');
-  await models.load((p) => (info.textContent = `loading ${(p * 100) | 0}%`));
-  let sports = models.sports.filter((e) => !onlyId || e.id === onlyId);
+  const extra: CarModelEntry[] = (params.get('traffic') ?? '')
+    .split(',')
+    .filter(Boolean)
+    .map((f): CarModelEntry => ({ id: f.replace('.glb', ''), file: f, role: 'traffic', lengthMeters: Number(params.get('len') ?? '4.6') }))
+    .concat(
+      (params.get('sports') ?? '')
+        .split(',')
+        .filter(Boolean)
+        .map((f): CarModelEntry => ({ id: f.replace('.glb', ''), file: f, role: 'rival' })),
+    );
+  await models.load((p) => (info.textContent = `loading ${(p * 100) | 0}%`), extra);
+  let sports = params.get('nosports') ? [] : models.sports.filter((e) => (!onlyId || e.id === onlyId) && (!params.get('sports') || params.get('sports')!.includes(e.file)));
   const dup = Number(params.get('dup') ?? '1');
   if (dup > 1) sports = Array.from({ length: dup }, (_, i) => sports[i % sports.length]);
-  const traffic = models.traffic.filter((e) => !onlyId || e.id === onlyId);
+  const traffic = params.get('notraffic') ? [] : models.traffic.filter((e) => !onlyId || e.id === onlyId);
   const lines: string[] = [];
   const cars: { v: CarVisual | null; o: THREE.Object3D }[] = [];
 
@@ -139,7 +149,11 @@ async function main() {
     o.rotation.y = view === 'lineup' ? 0.55 : 0;
     scene.add(o);
     cars.push({ v: null, o });
-    lines.push(`traffic ${e.id}: tris=${models.get(e.id)!.tris} half=${h.toArray().map((x) => x.toFixed(2))}`);
+    const meshes: string[] = [];
+    o.traverse((m) => {
+      if ((m as THREE.Mesh).isMesh) meshes.push(((m as THREE.Mesh).material as THREE.Material).name || (m as THREE.Mesh).material.constructor.name);
+    });
+    lines.push(`traffic ${e.id}: tris=${models.get(e.id)!.tris} half=${h.toArray().map((x) => x.toFixed(2))} meshes=${meshes.length} [${meshes.join(',')}]`);
   });
 
   const focus = cars[0]?.o.position ?? new THREE.Vector3();
@@ -171,10 +185,11 @@ async function main() {
   }
   for (const e of sports.slice(0, 1)) {
     const pm = models.get(e.id)!;
+    lines.push('  lodBody: ' + pm.lodBody.map((p) => p.role + ':' + (p.material.name || '?')).join(', ') + ' | wheel lod: ' + (pm.wheels?.[0].lodParts.map((p) => p.role + ':' + p.material.name).join(',') ?? ''));
     for (const p of pm.body) lines.push(`  ${p.role} ${p.material.name}: ${p.geometry.index!.count / 3} -> ${p.lod ? p.lod.index!.count / 3 : 'drop'}`);
     for (const p of pm.wheels?.[0].parts ?? []) lines.push(`  wheel ${p.role} ${p.material.name}: ${p.geometry.index!.count / 3} -> ${p.lod ? p.lod.index!.count / 3 : 'drop'}`);
   }
-  info.textContent = lines.join('\n');
+  info.textContent = params.get('quiet') ? '' : lines.join('\n');
   console.log(lines.join('\n'));
 
   let frames = 0;

@@ -12,13 +12,13 @@ export interface RivalDef {
 }
 
 export const RIVALS: RivalDef[] = [
-  { name: 'NOX', car: 0, color: '#7cf8ff', paint: 0x0d0d10, skill: 1.0, aggression: 0.7, variant: 1 },
-  { name: 'VIPER', car: 2, color: '#9dff6a', paint: 0x2bd44a, skill: 0.98, aggression: 0.9, variant: 2 },
-  { name: 'KAITO', car: 1, color: '#ff8a1f', paint: 0xff6a00, skill: 0.97, aggression: 0.5, variant: 0 },
-  { name: 'JUNO', car: 0, color: '#ff4fd8', paint: 0xd61f9a, skill: 0.95, aggression: 0.4, variant: 3 },
-  { name: 'RAZE', car: 2, color: '#ffe14d', paint: 0xf2c400, skill: 0.94, aggression: 0.8, variant: 1 },
-  { name: 'SABLE', car: 1, color: '#b18cff', paint: 0x5b2bd6, skill: 0.92, aggression: 0.3, variant: 2 },
-  { name: 'GHOST', car: 0, color: '#e8e8e8', paint: 0xf4f4f4, skill: 0.9, aggression: 0.6, variant: 0 },
+  { name: 'NOX', car: 1, color: '#7cf8ff', paint: 0x0e0f12, skill: 1.0, aggression: 0.7, variant: 0 },
+  { name: 'VIPER', car: 0, color: '#9dff6a', paint: 0x2f8f3a, skill: 0.98, aggression: 0.9, variant: 0 },
+  { name: 'KAITO', car: 2, color: '#ff8a1f', paint: 0xff6a00, skill: 0.97, aggression: 0.5, variant: 0 },
+  { name: 'JUNO', car: 3, color: '#ff4fd8', paint: 0xb3126f, skill: 0.95, aggression: 0.4, variant: 0 },
+  { name: 'RAZE', car: 0, color: '#ffe14d', paint: 0xf2c400, skill: 0.94, aggression: 0.8, variant: 0 },
+  { name: 'SABLE', car: 1, color: '#b18cff', paint: 0x4a2bb0, skill: 0.92, aggression: 0.3, variant: 0 },
+  { name: 'GHOST', car: 3, color: '#e8e8e8', paint: 0xf4f4f4, skill: 0.9, aggression: 0.6, variant: 0 },
 ];
 
 /**

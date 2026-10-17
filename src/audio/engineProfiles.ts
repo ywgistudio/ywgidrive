@@ -1,6 +1,6 @@
 // Engine voice characters. Pure data + math (no Web Audio) so it can be rendered offline for tuning.
 
-export type EngineKind = 'v6tt' | 'rotary' | 'i6t';
+export type EngineKind = 'v6tt' | 'rotary' | 'i6t' | 'flat6tt' | 'flat6t' | 'i4na';
 
 export interface PeakFilter {
   freq: number;
@@ -138,6 +138,99 @@ export const ENGINE_PROFILES: Record<EngineKind, EngineProfile> = {
     pops: 0.6,
     lope: 0.03,
     sub: 0.16,
+    trim: 0.95,
+  },
+  // Modern twin-turbo flat six (992 Turbo S-ish): even 120-degree firing like an inline six, but two
+  // banks with slightly different header lengths. Turbos act as mufflers: deep, smooth, huge whoosh.
+  flat6tt: {
+    kind: 'flat6tt',
+    pulses: 6,
+    pulseWidth: 0.5,
+    pulseDecay: 0.26,
+    amps: [1.0, 0.92, 0.98, 0.93, 1.0, 0.94],
+    jitter: [0, 0.004, -0.003, 0.005, 0.001, -0.004],
+    peaks: [
+      { freq: 105, gain: 5, q: 1.0 },
+      { freq: 520, gain: 4.5, q: 1.6 },
+      { freq: 1700, gain: 3, q: 2.2 },
+      { freq: 3600, gain: -5, q: 1.0 },
+    ],
+    drive: [1.4, 5.5],
+    lpBase: 600,
+    lpLoad: 3800,
+    lpRpm: 0.42,
+    noiseFreq: 2200,
+    noiseGain: 0.16,
+    intakeGain: 0.1,
+    turboBase: 2400,
+    turboSpan: 6000,
+    turboGain: 0.055,
+    flutter: 0.15,
+    pops: 0.35,
+    lope: 0.03,
+    sub: 0.24,
+    trim: 1.0,
+  },
+  // Air-cooled flat six with one big turbo (930-ish): unequal-length headers give a lumpy boxer
+  // burble; the single turbo swallows the top end and adds a huge low whistle and surge flutter.
+  flat6t: {
+    kind: 'flat6t',
+    pulses: 6,
+    pulseWidth: 0.52,
+    pulseDecay: 0.3,
+    amps: [1.0, 0.82, 0.95, 0.85, 1.0, 0.8],
+    jitter: [0, 0.012, -0.008, 0.015, 0.004, -0.01],
+    peaks: [
+      { freq: 95, gain: 6, q: 1.0 },
+      { freq: 410, gain: 5, q: 1.5 },
+      { freq: 1300, gain: 3.5, q: 2.0 },
+      { freq: 3000, gain: -5, q: 1.0 },
+    ],
+    drive: [1.8, 6.5],
+    lpBase: 550,
+    lpLoad: 3400,
+    lpRpm: 0.4,
+    noiseFreq: 2000,
+    noiseGain: 0.2,
+    intakeGain: 0.08,
+    turboBase: 1500,
+    turboSpan: 4500,
+    turboGain: 0.07,
+    flutter: 0.9,
+    pops: 0.5,
+    lope: 0.12,
+    sub: 0.2,
+    trim: 1.0,
+  },
+  // Naturally aspirated four with individual throttle bodies (S14-ish): 2 pulses per revolution,
+  // narrow sharp pulses for rasp, loud intake honk, lumpy cams at idle, crackly overrun. No turbo.
+  i4na: {
+    kind: 'i4na',
+    pulses: 4,
+    pulseWidth: 0.45,
+    pulseDecay: 0.24,
+    amps: [1.0, 0.95, 0.98, 0.94],
+    jitter: [0, 0.004, -0.003, 0.005],
+    peaks: [
+      { freq: 160, gain: 4, q: 1.1 },
+      { freq: 640, gain: 5, q: 1.8 },
+      { freq: 1900, gain: 5, q: 2.4 },
+      { freq: 4300, gain: -2, q: 1.0 },
+    ],
+    drive: [1.8, 7.5],
+    lpBase: 850,
+    lpLoad: 6000,
+    lpRpm: 0.65,
+    noiseFreq: 3200,
+    noiseGain: 0.22,
+    intakeGain: 0.32,
+    turboBase: 2000,
+    turboSpan: 4000,
+    turboGain: 0,
+    flutter: 0,
+    pops: 0.8,
+    lope: 0.08,
+    sub: 0.1,
     trim: 0.95,
   },
 };

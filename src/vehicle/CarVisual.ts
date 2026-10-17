@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import type { CarModels, CarModelEntry, PreparedModel, MergedPart, MatRole } from './CarModels';
+import { collapseParts, CarModels, type CarModelEntry, type PreparedModel, type MergedPart, type MatRole } from './CarModels';
+
+// re-exported so callers can import everything car-visual related from one module
+export { CarModels };
+export type { CarModelEntry };
 
 export interface CarVisualOptions {
   paint: number;
@@ -170,6 +174,7 @@ export class CarVisual {
   private readonly ownedMaterials: THREE.Material[] = [];
   private readonly ownedGeometries: THREE.BufferGeometry[] = [];
   private readonly paintMat: THREE.MeshPhysicalMaterial;
+  private readonly paintLod: THREE.MeshPhysicalMaterial;
   private readonly headMat: THREE.MeshStandardMaterial;
   private readonly tailMat: THREE.MeshStandardMaterial;
   private readonly reverseMat: THREE.MeshStandardMaterial;
@@ -182,6 +187,7 @@ export class CarVisual {
   private readonly hiGroups: THREE.Group[] = [];
   private readonly loGroups: THREE.Group[] = [];
   private lodLevel = -1;
+  private hasReverseMat = false;
   private wheelLift = 0;
   private fittedZ = false;
   private time = Math.random() * 10;
@@ -205,10 +211,11 @@ export class CarVisual {
       envMapIntensity: 1.25,
     });
     addFlakes(this.paintMat);
+    this.paintLod = new THREE.MeshPhysicalMaterial({ name: 'carpaint-lod', color: opts.paint, metalness: 0.68, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05, envMap, envMapIntensity: 1.25, side: THREE.DoubleSide });
     this.headMat = new THREE.MeshStandardMaterial({ name: 'headlight', color: 0xffffff, emissive: 0xfff1df, emissiveIntensity: 10, roughness: 0.15, metalness: 0 });
-    this.tailMat = new THREE.MeshStandardMaterial({ name: 'taillight', color: 0x1a0000, emissive: 0xff0400, emissiveIntensity: 1.8, roughness: 0.25, metalness: 0 });
+    this.tailMat = new THREE.MeshStandardMaterial({ name: 'taillight', color: 0x140000, emissive: 0xff0200, emissiveIntensity: 1.1, roughness: 0.25, metalness: 0 });
     this.reverseMat = new THREE.MeshStandardMaterial({ name: 'reverse', color: 0x111111, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.3 });
-    this.ownedMaterials.push(this.paintMat, this.headMat, this.tailMat, this.reverseMat);
+    this.ownedMaterials.push(this.paintMat, this.paintLod, this.headMat, this.tailMat, this.reverseMat);
 
     const roleMat = (part: MergedPart): THREE.Material => {
       switch (part.role) {
@@ -218,6 +225,9 @@ export class CarVisual {
           return this.headMat;
         case 'tail':
           return this.tailMat;
+        case 'reverse':
+          this.hasReverseMat = true;
+          return this.reverseMat;
         default:
           if (envMap && (part.material as THREE.MeshStandardMaterial).isMeshStandardMaterial && !(part.material as THREE.MeshStandardMaterial).envMap) {
             // shared template materials: only set once
@@ -236,16 +246,15 @@ export class CarVisual {
     bodyMeshes.add(hi, lo);
     this.body.add(bodyMeshes);
     for (const part of pm.body) {
-      const mat = roleMat(part);
-      const mesh = new THREE.Mesh(part.geometry, mat);
+      const mesh = new THREE.Mesh(part.geometry, roleMat(part));
       if (part.role === 'glass') mesh.renderOrder = 1;
       hi.add(mesh);
       if (part.role === 'interior') this.interior.push(mesh);
-      if (part.lod) {
-        const lm = new THREE.Mesh(part.lod, mat);
-        if (part.role === 'glass') lm.renderOrder = 1;
-        lo.add(lm);
-      }
+    }
+    for (const part of pm.lodBody) {
+      const lm = new THREE.Mesh(part.geometry, part.role === 'paint' ? this.paintLod : roleMat(part));
+      if (part.role === 'glass') lm.renderOrder = 1;
+      lo.add(lm);
     }
     this.hiGroups.push(hi);
     this.loGroups.push(lo);
@@ -271,11 +280,8 @@ export class CarVisual {
         spin.scale.setScalar(wheelScale);
         const whi = new THREE.Group();
         const wlo = new THREE.Group();
-        for (const part of w.parts) {
-          const mat = roleMat(part);
-          whi.add(new THREE.Mesh(part.geometry, mat));
-          if (part.lod) wlo.add(new THREE.Mesh(part.lod, mat));
-        }
+        for (const part of w.parts) whi.add(new THREE.Mesh(part.geometry, roleMat(part)));
+        for (const part of w.lodParts) wlo.add(new THREE.Mesh(part.geometry, roleMat(part)));
         spin.add(whi, wlo);
         this.hiGroups.push(whi);
         this.loGroups.push(wlo);
@@ -312,12 +318,19 @@ export class CarVisual {
     const W = pm.bounds.max.x - pm.bounds.min.x;
     if (!pm.hasHeadMat) for (const p of pm.headlights) lightQuad(p, W * 0.16, 0.07, this.headMat, 1);
     if (!pm.hasTailMat) for (const p of pm.taillights) lightQuad(p, W * 0.18, 0.07, this.tailMat, -1);
-    for (const p of pm.taillights) {
-      const rp = p.clone();
-      rp.x *= 0.62;
-      rp.y -= 0.03;
-      rp.z = pm.bounds.min.z + 0.015;
-      lightQuad(rp, 0.12, 0.045, this.reverseMat, -1);
+    if (!this.hasReverseMat) {
+      // both reverse lamps in one mesh
+      const quads = pm.taillights.slice(0, 2).map((p) => {
+        const g = new THREE.PlaneGeometry(0.12, 0.045);
+        g.rotateY(Math.PI);
+        g.translate(p.x * 0.62 + this.bodyOffset.x, p.y - 0.03 + this.bodyOffset.y, pm.bounds.min.z + 0.005 + this.bodyOffset.z);
+        return g;
+      });
+      const rg = mergeGeometries(quads, false);
+      if (rg) {
+        this.ownedGeometries.push(rg);
+        this.body.add(new THREE.Mesh(rg, this.reverseMat));
+      }
     }
 
     // headlight beams (all cars) + spot lights (player)
@@ -419,7 +432,7 @@ export class CarVisual {
   }
 
   setLights(o: { brake: number; reverse: boolean; headlights: boolean; nitro: boolean }) {
-    this.tailMat.emissiveIntensity = 1.8 + 8 * THREE.MathUtils.clamp(o.brake, 0, 1);
+    this.tailMat.emissiveIntensity = 1.1 + 6.5 * THREE.MathUtils.clamp(o.brake, 0, 1);
     this.reverseMat.emissiveIntensity = o.reverse ? 7 : 0;
     this.headMat.emissiveIntensity = o.headlights ? 10 : 0.4;
     this.beamMat.uniforms.uIntensity.value = o.headlights ? (this.opts.player ? 0.03 : 0.045) : 0;
@@ -437,7 +450,7 @@ export class CarVisual {
   /** Distance LOD: full detail up close, simplified meshes (no interior) further away. */
   updateLod(camera: THREE.Vector3) {
     const d = this.object.getWorldPosition(_v).distanceTo(camera);
-    const far = this.opts.player ? 70 : 34;
+    const far = this.opts.player ? 70 : 26;
     this.setLodLevel(d < far ? 0 : 1);
     if (this.lodLevel === 0) {
       const showInterior = d < 26;
@@ -454,6 +467,7 @@ export class CarVisual {
 
   setPaint(color: number) {
     this.paintMat.color.set(color);
+    this.paintLod.color.set(color);
   }
 
   dispose() {
@@ -467,6 +481,7 @@ export class CarVisual {
 
 interface TrafficTemplate {
   parts: { geometry: THREE.BufferGeometry; material: THREE.Material; role: MatRole }[];
+  paintMap: THREE.Texture | null;
   beam: THREE.BufferGeometry;
   shadow: THREE.BufferGeometry;
   center: THREE.Vector3;
@@ -474,7 +489,7 @@ interface TrafficTemplate {
 }
 
 const trafficTemplates = new Map<string, TrafficTemplate>();
-const trafficPaint = new Map<number, THREE.MeshStandardMaterial>();
+const trafficPaint = new Map<string, THREE.MeshStandardMaterial>();
 let trafficHead: THREE.MeshStandardMaterial | null = null;
 let trafficBeamMat: THREE.ShaderMaterial | null = null;
 
@@ -485,19 +500,14 @@ function trafficTemplate(models: CarModels, entry: CarModelEntry): TrafficTempla
   if (!pm) throw new Error(`traffic model ${entry.id} not loaded`);
   const center = pm.bounds.getCenter(new THREE.Vector3());
   const half = pm.bounds.getSize(new THREE.Vector3()).multiplyScalar(0.5);
-  // collect body + static wheels into one list, recentered on the bounds center, then merge per material
-  const byMat = new Map<THREE.Material, { geos: THREE.BufferGeometry[]; role: MatRole }>();
-  const push = (g: THREE.BufferGeometry, mat: THREE.Material, role: MatRole) => {
-    let e = byMat.get(mat);
-    if (!e) byMat.set(mat, (e = { geos: [], role }));
-    e.geos.push(g);
-  };
+  // body + static wheels recentered on the bounds center, collapsed into a handful of draw calls
+  const items: { geometry: THREE.BufferGeometry; material: THREE.Material; role: MatRole }[] = [];
   const toCenter = new THREE.Matrix4().makeTranslation(-center.x, -center.y, -center.z);
-  for (const p of pm.body) push(p.geometry.clone().applyMatrix4(toCenter), p.material, p.role);
+  for (const p of pm.body) items.push({ geometry: p.geometry.clone().applyMatrix4(toCenter), material: p.material, role: p.role });
   if (pm.wheels) {
     for (const w of pm.wheels) {
       const m = new THREE.Matrix4().makeTranslation(w.center.x - center.x, w.center.y - center.y, w.center.z - center.z);
-      for (const p of w.parts) push(p.geometry.clone().applyMatrix4(m), p.material, p.role);
+      for (const p of w.parts) items.push({ geometry: p.geometry.clone().applyMatrix4(m), material: p.material, role: p.role });
     }
   }
   const W = half.x * 2;
@@ -508,36 +518,18 @@ function trafficTemplate(models: CarModels, entry: CarModelEntry): TrafficTempla
     return g;
   };
   const dummy = new THREE.MeshStandardMaterial();
-  if (!pm.hasHeadMat) for (const p of pm.headlights) push(quad(p, W * 0.16, 0.07, 1), dummy, 'head');
-  const tailDummy = new THREE.MeshStandardMaterial();
-  if (!pm.hasTailMat) for (const p of pm.taillights) push(quad(p, W * 0.18, 0.07, -1), tailDummy, 'tail');
-
-  // merge all roles that share a final material: head parts -> one, tail parts -> one, paint -> one
-  const roleBuckets = new Map<string, { geos: THREE.BufferGeometry[]; material: THREE.Material; role: MatRole }>();
-  for (const [mat, e] of byMat) {
-    const key = e.role === 'paint' || e.role === 'head' || e.role === 'tail' ? e.role : mat.uuid;
-    let b = roleBuckets.get(key);
-    if (!b) roleBuckets.set(key, (b = { geos: [], material: mat, role: e.role }));
-    b.geos.push(...e.geos);
-  }
-  const parts: TrafficTemplate['parts'] = [];
-  for (const b of roleBuckets.values()) {
-    for (const g of b.geos) {
-      if (!g.index) g.setIndex([...Array(g.getAttribute('position').count).keys()]);
-      if (!g.getAttribute('uv')) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
-      for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
-    }
-    const merged = b.geos.length === 1 ? b.geos[0] : mergeGeometries(b.geos, false);
-    if (merged) {
-      merged.computeBoundingSphere();
-      parts.push({ geometry: merged, material: b.material, role: b.role });
-    }
-  }
+  if (!pm.hasHeadMat) for (const p of pm.headlights) items.push({ geometry: quad(p, W * 0.16, 0.07, 1), material: dummy, role: 'head' });
+  if (!pm.hasTailMat) for (const p of pm.taillights) items.push({ geometry: quad(p, W * 0.18, 0.07, -1), material: dummy, role: 'tail' });
+  const parts: TrafficTemplate['parts'] = collapseParts(items, true).map((p) => ({ geometry: p.geometry, material: p.material, role: p.role }));
+  for (const it of items) it.geometry.dispose();
+  // keep the original paint texture (liveries, taxi decals)
+  const paintSrc = pm.body.find((p) => p.role === 'paint')?.material as THREE.MeshStandardMaterial | undefined;
+  const paintMap = paintSrc?.map ?? null;
   const beam = makeBeamGeometry(pm.headlights.map((p) => p.clone().sub(center)));
   const shadow = new THREE.PlaneGeometry(half.x * 2 * 1.3, half.z * 2 * 1.12);
   shadow.rotateX(-Math.PI / 2);
   shadow.translate(0, -half.y + 0.03, 0);
-  const t: TrafficTemplate = { parts, beam, shadow, center, half };
+  const t: TrafficTemplate = { parts, beam, shadow, center, half, paintMap };
   trafficTemplates.set(entry.id, t);
   return t;
 }
@@ -549,6 +541,11 @@ export function modelHalfExtents(models: CarModels, entry: CarModelEntry): THREE
   return pm.bounds.getSize(new THREE.Vector3()).multiplyScalar(0.5);
 }
 
+let _trafficReverse: THREE.MeshStandardMaterial | null = null;
+function trafficReverse() {
+  return (_trafficReverse ??= new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.2, emissive: 0xffffff, emissiveIntensity: 0.05 }));
+}
+
 const TRAFFIC_COLORS = [0xe8e8e8, 0x1b1c1f, 0x8a9099, 0x2d4a7a, 0x7a1f22, 0xc9b28a, 0x3d5a40, 0xf2c500, 0x55606e, 0xffffff];
 
 /**
@@ -557,18 +554,20 @@ const TRAFFIC_COLORS = [0xe8e8e8, 0x1b1c1f, 0x8a9099, 0x2d4a7a, 0x7a1f22, 0xc9b2
  */
 export function makeTrafficVisual(models: CarModels, entry: CarModelEntry, paint?: number): THREE.Object3D {
   const t = trafficTemplate(models, entry);
-  const color = paint ?? (entry.kind === 'taxi' ? 0xf2c500 : TRAFFIC_COLORS[(Math.random() * TRAFFIC_COLORS.length) | 0]);
-  let pmat = trafficPaint.get(color);
+  // textured liveries (taxi, bus) keep their colors; plain bodies get a random realistic color
+  const color = paint ?? (t.paintMap || entry.kind === 'taxi' || entry.kind === 'bus' ? (t.paintMap ? 0xffffff : 0xf2c500) : TRAFFIC_COLORS[(Math.random() * TRAFFIC_COLORS.length) | 0]);
+  const pkey = `${color}:${t.paintMap?.uuid ?? ''}`;
+  let pmat = trafficPaint.get(pkey);
   if (!pmat) {
-    pmat = new THREE.MeshStandardMaterial({ color, metalness: 0.5, roughness: 0.32, envMapIntensity: 1.1 });
-    trafficPaint.set(color, pmat);
+    pmat = new THREE.MeshStandardMaterial({ color, map: t.paintMap, metalness: t.paintMap ? 0.2 : 0.5, roughness: 0.32, envMapIntensity: 1.1 });
+    trafficPaint.set(pkey, pmat);
   }
   if (!trafficHead) trafficHead = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff1df, emissiveIntensity: 8, roughness: 0.2 });
   if (!trafficBeamMat) trafficBeamMat = makeBeamMaterial(0.04);
-  const tail = new THREE.MeshStandardMaterial({ color: 0x1a0000, emissive: 0xff0400, emissiveIntensity: 1.6, roughness: 0.3 });
+  const tail = new THREE.MeshStandardMaterial({ color: 0x140000, emissive: 0xff0200, emissiveIntensity: 1.1, roughness: 0.3 });
   const root = new THREE.Group();
   for (const p of t.parts) {
-    const mat = p.role === 'paint' ? pmat : p.role === 'head' ? trafficHead : p.role === 'tail' ? tail : p.material;
+    const mat = p.role === 'paint' ? pmat : p.role === 'head' ? trafficHead : p.role === 'tail' ? tail : p.role === 'reverse' ? trafficReverse() : p.material;
     root.add(new THREE.Mesh(p.geometry, mat));
   }
   const beam = new THREE.Mesh(t.beam, trafficBeamMat);
@@ -578,7 +577,7 @@ export function makeTrafficVisual(models: CarModels, entry: CarModelEntry, paint
   sh.renderOrder = 2;
   root.add(sh);
   root.userData.setBrake = (b: number) => {
-    tail.emissiveIntensity = 1.6 + 7 * THREE.MathUtils.clamp(b, 0, 1);
+    tail.emissiveIntensity = 1.1 + 6 * THREE.MathUtils.clamp(b, 0, 1);
   };
   root.userData.halfExtents = t.half.clone();
   root.userData.dispose = () => tail.dispose();

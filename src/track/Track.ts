@@ -159,7 +159,7 @@ export class Track {
         }
       }
       if (crest >= 0) {
-        const rise = 50, fall = 46, h = 2.4, round = 3;
+        const rise = 55, fall = 50, h = 1.8, round = 3;
         for (let k = -Math.ceil(rise / this.step) - 2; k <= Math.ceil(fall / this.step) + 2; k++) {
           const d = k * this.step;
           let y = 0;

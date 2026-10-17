@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { Track } from '../track/Track';
+import type { Track, Lamp } from '../track/Track';
 import type { Zone } from '../track/TrackDef';
 import { START_S } from '../track/TrackDef';
 import type { TrackGrid } from './TrackGrid';
@@ -69,6 +69,26 @@ export class City {
     this.skyline();
   }
 
+  /** Floodlight masts for the container yards (same placement StreetProps uses). */
+  yardLamps(): Lamp[] {
+    return this.yards.map((y) => {
+      const c = Math.cos(y.yaw), s = Math.sin(y.yaw);
+      const lx = y.w / 2 + 1.5, lz = -y.d / 2;
+      const px = y.x + lx * c + lz * s;
+      const pz = y.z - lx * s + lz * c;
+      const n = this.grid.nearest(px, pz, 400);
+      return {
+        pos: new THREE.Vector3(px, y.y + 22.3, pz),
+        color: new THREE.Color(1.0, 0.62, 0.3),
+        intensity: 900,
+        range: 52,
+        s: n.index >= 0 ? n.index * this.track.step : 0,
+        side: 0,
+        tunnel: false,
+      };
+    });
+  }
+
   /** True if (x,z) is not covered by a building and is clear of the road walls by `clear` meters. */
   free(x: number, z: number, clear = 1.5): boolean {
     const k = this.occIdx(x, z);
@@ -101,7 +121,7 @@ export class City {
         const pz = z - lx * s + lz * c;
         const k = this.occIdx(px, pz);
         if (k < 0 || this.occ[k]) return false;
-        if (this.grid.clearance(px, pz, minClear + 30) < minClear) return false;
+        if (this.grid.clearanceFast(px, pz, minClear) < minClear) return false;
         if (!allowWater && this.terrain.basin(px, pz) > 0.05) return false;
       }
     }
@@ -281,7 +301,7 @@ export class City {
         if (!r.chance(this.density)) continue;
         const px = x + r.range(-8, 8);
         const pz = z + r.range(-8, 8);
-        const near = this.grid.nearest(px, pz, 400);
+        const near = this.grid.nearest(px, pz, 150);
         const zone: Zone = near.index >= 0 ? t.zoneAt(near.index) : 'downtown';
         if (T.basin(px, pz) > 0.02) continue;
         let yaw = 0;
@@ -297,17 +317,18 @@ export class City {
         if (nearTrack && zone === 'park' && r.chance(0.6)) continue; // leave room for trees
         if (nearTrack && zone === 'hills' && r.chance(0.25)) continue;
         if (!this.fits(px, pz, w, d, yaw, 3)) continue;
-        if (nearTrack && zone === 'docks' && r.chance(0.5)) {
+        const port = zone === 'docks' || (zone === 'harbor' && px > 600 && pz > 460 && pz < 640);
+        if (nearTrack && port && r.chance(zone === 'docks' ? 0.55 : 0.4)) {
           this.yards.push({ x: px, z: pz, w, d, yaw, y: this.terrain.height(px, pz) });
           this.mark(px, pz, w, d, yaw, 1);
           continue;
         }
-        const des = this.design(near.dist > 300 ? 'downtown' : zone, px, pz, false);
+        const des = this.design(near.index < 0 ? 'downtown' : zone, px, pz, false);
         // fade height a little with distance from the circuit so the skyline reads layered
         const y = this.baseY(px, pz, w, d, yaw);
         const b = this.add({
           x: px, z: pz, y, w, d,
-          h: des.h * (near.dist > 250 ? r.range(0.8, 1.4) : 1),
+          h: des.h * (near.index < 0 ? r.range(0.8, 1.4) : 1),
           yaw,
           style: des.style,
           hue: r.next(),

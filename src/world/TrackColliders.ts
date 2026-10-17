@@ -36,7 +36,7 @@ export function buildTrackColliders(world: RAPIER.World, track: Track) {
         idx.push(a + c + 1, b + c, b + c + 1);
       }
     }
-    const desc = RAPIER.ColliderDesc.trimesh(new Float32Array(verts), new Uint32Array(idx), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES)
+    const desc = RAPIER.ColliderDesc.trimesh(new Float32Array(verts), new Uint32Array(idx), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES_TWO_SIDED)
       .setFriction(friction)
       .setRestitution(0.05)
       .setCollisionGroups(STATIC_GROUPS);

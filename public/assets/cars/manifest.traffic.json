@@ -1,0 +1,803 @@
+{
+  "version": 1,
+  "generated": "2026-10-17",
+  "convention": "All files are pre-normalized: +Z forward, +Y up, +X = vehicle left, meters, ground at y=0, x/z centered on the bounding box. Wheel nodes (wheel_fl/fr/rl/rr) are pivots at the wheel centers (axle along X); their meshes are children. Geometry uses EXT_meshopt_compression + KHR_mesh_quantization (GLTFLoader.setMeshoptDecoder(MeshoptDecoder)); textures are WebP (EXT_texture_webp).",
+  "models": [
+    {
+      "id": "sedan_compact",
+      "file": "traffic_sedan_compact.glb",
+      "role": "traffic",
+      "kind": "sedan",
+      "make": "Generic",
+      "name": "Kiri '10 compact sedan (generic Asian-styled economy sedan)",
+      "source": "https://sketchfab.com/3d-models/generic-sedan-2010-low-poly-model-7fd6e15785fa4aa9bfd6e31eb7c97ba6",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-107/7fd6e15785fa4aa9bfd6e31eb7c97ba6.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"Generic sedan 2010 - Low poly model\" (https://sketchfab.com/3d-models/generic-sedan-2010-low-poly-model-7fd6e15785fa4aa9bfd6e31eb7c97ba6) by Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "Daniel Zhabotinsky",
+      "authorUrl": "https://sketchfab.com/DanielZhabotinsky",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.5,
+      "massKg": 1250,
+      "maxSpeed": 14,
+      "bounds": {
+        "min": [
+          -0.882,
+          0,
+          -2.25
+        ],
+        "max": [
+          0.882,
+          1.488,
+          2.25
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.7243,
+          0.3083,
+          1.4709
+        ],
+        "fr": [
+          -0.7248,
+          0.3083,
+          1.4709
+        ],
+        "rl": [
+          0.7243,
+          0.3083,
+          -1.324
+        ],
+        "rr": [
+          -0.7248,
+          0.3083,
+          -1.324
+        ]
+      },
+      "wheelRadius": 0.308,
+      "paintMaterials": [
+        "solar_body"
+      ],
+      "glassMaterials": [
+        "solar_glass"
+      ],
+      "headlightMaterials": [
+        "solar_headlights_head"
+      ],
+      "taillightMaterials": [
+        "solar_headlights_tail"
+      ],
+      "tris": 12862,
+      "sizeBytes": 244012,
+      "notes": "Unbranded design. Paint material is untextured (recolor freely)."
+    },
+    {
+      "id": "hatch_city",
+      "file": "traffic_hatch_city.glb",
+      "role": "traffic",
+      "kind": "hatch",
+      "make": "Generic",
+      "name": "Ace '11 city hatchback (generic late-2000s 5-door)",
+      "source": "https://sketchfab.com/3d-models/modern-hatchback-low-poly-model-055ff8a21b8d4d279debca089e2fafcd",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-125/055ff8a21b8d4d279debca089e2fafcd.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"Modern Hatchback - Low Poly model\" (https://sketchfab.com/3d-models/modern-hatchback-low-poly-model-055ff8a21b8d4d279debca089e2fafcd) by Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "Daniel Zhabotinsky",
+      "authorUrl": "https://sketchfab.com/DanielZhabotinsky",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4,
+      "massKg": 1150,
+      "maxSpeed": 13.5,
+      "bounds": {
+        "min": [
+          -0.896,
+          0,
+          -2
+        ],
+        "max": [
+          0.896,
+          1.502,
+          2
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.7335,
+          0.3024,
+          1.1417
+        ],
+        "fr": [
+          -0.7335,
+          0.3024,
+          1.1417
+        ],
+        "rl": [
+          0.7335,
+          0.3024,
+          -1.3737
+        ],
+        "rr": [
+          -0.7335,
+          0.3024,
+          -1.3737
+        ]
+      },
+      "wheelRadius": 0.307,
+      "paintMaterials": [
+        "MODERNHATCH_atlas_paint"
+      ],
+      "glassMaterials": [
+        "MODERNHATCH_glass"
+      ],
+      "headlightMaterials": [
+        "MODERNHATCH_atlas_head",
+        "MODERNHATCH_glass_lamp"
+      ],
+      "taillightMaterials": [
+        "MODERNHATCH_atlas_tail"
+      ],
+      "tris": 10101,
+      "sizeBytes": 324620,
+      "notes": "Unbranded design. Body, trim and lights share one texture atlas; the white body-panel triangles were split into MODERNHATCH_atlas_paint (still textured, white) so paint can be swapped without tinting trim/lights."
+    },
+    {
+      "id": "taxi_crownvic",
+      "file": "traffic_taxi_crownvic.glb",
+      "role": "traffic",
+      "kind": "taxi",
+      "make": "Ford",
+      "name": "2001 Ford Crown Victoria taxi (yellow cab livery)",
+      "source": "https://sketchfab.com/3d-models/2001-crown-victoria-taxi-game-prop-2429a825ff1646568e8e6e1453f9c501",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-006/2429a825ff1646568e8e6e1453f9c501.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"2001 Crown Victoria Taxi Game Prop\" (https://sketchfab.com/3d-models/2001-crown-victoria-taxi-game-prop-2429a825ff1646568e8e6e1453f9c501) by 8sianDude (https://sketchfab.com/haoliu95), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "8sianDude",
+      "authorUrl": "https://sketchfab.com/haoliu95",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 5.39,
+      "massKg": 1850,
+      "maxSpeed": 14,
+      "bounds": {
+        "min": [
+          -1.092,
+          0,
+          -2.695
+        ],
+        "max": [
+          1.092,
+          1.662,
+          2.695
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.8267,
+          0.3447,
+          1.5954
+        ],
+        "fr": [
+          -0.8267,
+          0.3447,
+          1.5954
+        ],
+        "rl": [
+          0.8267,
+          0.3447,
+          -1.3536
+        ],
+        "rr": [
+          -0.8267,
+          0.3447,
+          -1.3536
+        ]
+      },
+      "wheelRadius": 0.345,
+      "paintMaterials": [],
+      "glassMaterials": [
+        "glass_window"
+      ],
+      "headlightMaterials": [
+        "lamp_lenses_head"
+      ],
+      "taillightMaterials": [
+        "lamp_lenses_tail"
+      ],
+      "tris": 33866,
+      "sizeBytes": 983724,
+      "notes": "Livery (yellow + decals) is baked into the taxi_livery texture, so paintMaterials is empty and the texture is kept. To reuse as a plain sedan, multiply taxi_livery color or swap the texture. Author: 'loosely modelled off the 2001 Ford Crown Victoria'. Trademark: Ford grille badge and 'Yellow Cab' decals are in the textures."
+    },
+    {
+      "id": "suv_compact",
+      "file": "traffic_suv_compact.glb",
+      "role": "traffic",
+      "kind": "suv",
+      "make": "Generic",
+      "name": "Urban '10 compact SUV (generic European crossover)",
+      "source": "https://sketchfab.com/3d-models/generic-suv-low-poly-model-2866efdfa943484391ef8313768e074d",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-005/2866efdfa943484391ef8313768e074d.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"Generic SUV - Low poly model\" (https://sketchfab.com/3d-models/generic-suv-low-poly-model-2866efdfa943484391ef8313768e074d) by Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "Daniel Zhabotinsky",
+      "authorUrl": "https://sketchfab.com/DanielZhabotinsky",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.35,
+      "massKg": 1350,
+      "maxSpeed": 14,
+      "bounds": {
+        "min": [
+          -0.965,
+          0,
+          -2.175
+        ],
+        "max": [
+          0.965,
+          1.541,
+          2.175
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.7478,
+          0.336,
+          1.3923
+        ],
+        "fr": [
+          -0.7442,
+          0.336,
+          1.3923
+        ],
+        "rl": [
+          0.7478,
+          0.336,
+          -1.31
+        ],
+        "rr": [
+          -0.7442,
+          0.336,
+          -1.31
+        ]
+      },
+      "wheelRadius": 0.336,
+      "paintMaterials": [
+        "dust_body"
+      ],
+      "glassMaterials": [
+        "dust_glass"
+      ],
+      "headlightMaterials": [
+        "dust_headlights_head"
+      ],
+      "taillightMaterials": [
+        "dust_headlights_tail"
+      ],
+      "tris": 17721,
+      "sizeBytes": 330992,
+      "notes": "Unbranded design. Paint material is untextured."
+    },
+    {
+      "id": "van_ducato",
+      "file": "traffic_van_ducato.glb",
+      "role": "traffic",
+      "kind": "van",
+      "make": "Fiat",
+      "name": "2014 Fiat Ducato panel van (L1H1)",
+      "source": "https://sketchfab.com/3d-models/2014-fiat-ducato-8a651ad182414bb0a8b6c6d8d5bd7c01",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-131/8a651ad182414bb0a8b6c6d8d5bd7c01.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"2014 Fiat Ducato\" (https://sketchfab.com/3d-models/2014-fiat-ducato-8a651ad182414bb0a8b6c6d8d5bd7c01) by razor24 (https://sketchfab.com/razor24), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "razor24",
+      "authorUrl": "https://sketchfab.com/razor24",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.96,
+      "massKg": 2100,
+      "maxSpeed": 12.5,
+      "bounds": {
+        "min": [
+          -1.244,
+          0,
+          -2.48
+        ],
+        "max": [
+          1.244,
+          2.228,
+          2.48
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.8955,
+          0.3477,
+          1.53
+        ],
+        "fr": [
+          -0.8955,
+          0.3477,
+          1.53
+        ],
+        "rl": [
+          0.8955,
+          0.3477,
+          -1.449
+        ],
+        "rr": [
+          -0.8955,
+          0.3477,
+          -1.449
+        ]
+      },
+      "wheelRadius": 0.348,
+      "paintMaterials": [
+        "van_paint"
+      ],
+      "glassMaterials": [
+        "glass"
+      ],
+      "headlightMaterials": [
+        "front_lamps"
+      ],
+      "taillightMaterials": [
+        "brakelights_red"
+      ],
+      "tris": 35486,
+      "sizeBytes": 310984,
+      "notes": "Untextured (material colors only), has a cabin interior. Fiat badge modeled on the grille. Also usable as a Peugeot Boxer/Citroen Jumper/Ram ProMaster-class delivery van."
+    },
+    {
+      "id": "truck_box",
+      "file": "traffic_truck_box.glb",
+      "role": "traffic",
+      "kind": "truck",
+      "make": "Generic",
+      "name": "LCT 3000 '07 light box truck (generic Japanese cab-over)",
+      "source": "https://sketchfab.com/3d-models/light-commercial-truck-07-low-poly-model-3be03b6a43aa41898c9ca806b8787052",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-149/3be03b6a43aa41898c9ca806b8787052.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"Light Commercial Truck '07- Low poly model\" (https://sketchfab.com/3d-models/light-commercial-truck-07-low-poly-model-3be03b6a43aa41898c9ca806b8787052) by Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "Daniel Zhabotinsky",
+      "authorUrl": "https://sketchfab.com/DanielZhabotinsky",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 6.2,
+      "massKg": 5500,
+      "maxSpeed": 11,
+      "bounds": {
+        "min": [
+          -1.3,
+          0,
+          -3.1
+        ],
+        "max": [
+          1.3,
+          2.744,
+          3.1
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.9329,
+          0.3598,
+          2.0491
+        ],
+        "fr": [
+          -0.9358,
+          0.3598,
+          2.0491
+        ],
+        "rl": [
+          0.8489,
+          0.3598,
+          -1.5219
+        ],
+        "rr": [
+          -0.8517,
+          0.3598,
+          -1.5219
+        ]
+      },
+      "wheelRadius": 0.36,
+      "paintMaterials": [
+        "LCT_body_cab"
+      ],
+      "glassMaterials": [
+        "GLASS"
+      ],
+      "headlightMaterials": [
+        "LIGHT_head",
+        "LIGHTS_GLASS_head"
+      ],
+      "taillightMaterials": [
+        "LIGHT_tail",
+        "LIGHTS_GLASS_tail"
+      ],
+      "tris": 13294,
+      "sizeBytes": 498824,
+      "notes": "Unbranded design. The original body material was split so only the cab takes paint (LCT_body_cab); the cargo box keeps LCT_body (white)."
+    },
+    {
+      "id": "pickup_90s",
+      "file": "traffic_pickup_90s.glb",
+      "role": "traffic",
+      "kind": "pickup",
+      "make": "Generic",
+      "name": "Conquer '89 light pickup (generic 90s compact pickup)",
+      "source": "https://sketchfab.com/3d-models/generic-90s-light-pickup-low-poly-model-6c48c94be8974dc7a5932f697c0ba68f",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-089/6c48c94be8974dc7a5932f697c0ba68f.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"Generic 90s light pickup - Low poly model\" (https://sketchfab.com/3d-models/generic-90s-light-pickup-low-poly-model-6c48c94be8974dc7a5932f697c0ba68f) by Daniel Zhabotinsky (https://sketchfab.com/DanielZhabotinsky), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "Daniel Zhabotinsky",
+      "authorUrl": "https://sketchfab.com/DanielZhabotinsky",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.75,
+      "massKg": 1650,
+      "maxSpeed": 13.5,
+      "bounds": {
+        "min": [
+          -0.944,
+          0,
+          -2.375
+        ],
+        "max": [
+          0.944,
+          1.843,
+          2.375
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.6452,
+          0.3401,
+          1.5421
+        ],
+        "fr": [
+          -0.6589,
+          0.3481,
+          1.5417
+        ],
+        "rl": [
+          0.644,
+          0.3401,
+          -1.1696
+        ],
+        "rr": [
+          -0.6579,
+          0.3481,
+          -1.1696
+        ]
+      },
+      "wheelRadius": 0.347,
+      "paintMaterials": [
+        "pickup_body"
+      ],
+      "glassMaterials": [
+        "UCB_GLASS_CLEAN"
+      ],
+      "headlightMaterials": [
+        "Riverside88_lights_head"
+      ],
+      "taillightMaterials": [
+        "Riverside88_lights_tail"
+      ],
+      "tris": 22502,
+      "sizeBytes": 742780,
+      "notes": "Unbranded design (bull bar + roll bar). Paint material is untextured."
+    },
+    {
+      "id": "bus_city",
+      "file": "traffic_bus_city.glb",
+      "role": "traffic",
+      "kind": "bus",
+      "make": "Generic",
+      "name": "Generic town bus (two-door city bus)",
+      "source": "https://sketchfab.com/3d-models/generic-town-bus-14fe03d792914d51b6c6250b393c44fd",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-154/14fe03d792914d51b6c6250b393c44fd.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"Generic Town Bus\" (https://sketchfab.com/3d-models/generic-town-bus-14fe03d792914d51b6c6250b393c44fd) by own.guest (https://sketchfab.com/own.guest), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "own.guest",
+      "authorUrl": "https://sketchfab.com/own.guest",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 11.5,
+      "massKg": 11500,
+      "maxSpeed": 10.5,
+      "bounds": {
+        "min": [
+          -1.401,
+          0.001,
+          -5.75
+        ],
+        "max": [
+          1.401,
+          2.846,
+          5.75
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.9891,
+          0.5102,
+          3.0718
+        ],
+        "fr": [
+          -0.966,
+          0.5102,
+          3.0718
+        ],
+        "rl": [
+          0.8794,
+          0.5096,
+          -2.2568
+        ],
+        "rr": [
+          -0.8564,
+          0.5096,
+          -2.2568
+        ]
+      },
+      "wheelRadius": 0.51,
+      "paintMaterials": [
+        "bus_body_white"
+      ],
+      "glassMaterials": [
+        "glass"
+      ],
+      "headlightMaterials": [
+        "glass_headlamp"
+      ],
+      "taillightMaterials": [
+        "standard1111_taillamp",
+        "standard2_taillamp"
+      ],
+      "tris": 28877,
+      "sizeBytes": 627092,
+      "notes": "Lower fidelity than the cars (simple shapes, bright livery, visible seats). Wheels were heavily decimated (6.5k -> ~1.9k tris each). Livery stripes are separate materials; bus_body_white is the base color."
+    },
+    {
+      "id": "bus_school",
+      "file": "traffic_bus_school.glb",
+      "role": "traffic",
+      "kind": "bus",
+      "make": "Generic",
+      "name": "US school bus (conventional, Type C)",
+      "source": "https://sketchfab.com/3d-models/school-bus-a959ee8ce17d434f9fdbc93cad199a21",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-106/a959ee8ce17d434f9fdbc93cad199a21.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"School Bus\" (https://sketchfab.com/3d-models/school-bus-a959ee8ce17d434f9fdbc93cad199a21) by Macaroni (https://sketchfab.com/Macaroniii), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "Macaroni",
+      "authorUrl": "https://sketchfab.com/Macaroniii",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 10.7,
+      "massKg": 11000,
+      "maxSpeed": 10.5,
+      "bounds": {
+        "min": [
+          -1.262,
+          0,
+          -5.35
+        ],
+        "max": [
+          1.262,
+          3.011,
+          5.35
+        ]
+      },
+      "wheels": null,
+      "paintMaterials": [],
+      "glassMaterials": [],
+      "headlightMaterials": [
+        "schoolbus_atlas_head"
+      ],
+      "taillightMaterials": [
+        "schoolbus_atlas_tail"
+      ],
+      "tris": 16282,
+      "sizeBytes": 434960,
+      "notes": "Single texture atlas with an emissive lamp map. The flat white window texels were split into schoolbus_atlas_darktint (opaque dark tint, untextured). No separate wheel meshes (wheels: null). Keep the yellow livery (paintMaterials empty)."
+    },
+    {
+      "id": "bmw_e90",
+      "file": "traffic_bmw_e90.glb",
+      "role": "traffic",
+      "kind": "sedan",
+      "make": "BMW",
+      "name": "BMW 320i (E90) sedan",
+      "source": "https://sketchfab.com/3d-models/bmw-320i-e90-low-polly-28f0bc2f0083417a8e521150529034d6",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-063/28f0bc2f0083417a8e521150529034d6.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"BMW 320i E90 Low Polly\" (https://sketchfab.com/3d-models/bmw-320i-e90-low-polly-28f0bc2f0083417a8e521150529034d6) by rifdanzz (https://sketchfab.com/rifdanzz), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "rifdanzz",
+      "authorUrl": "https://sketchfab.com/rifdanzz",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.53,
+      "massKg": 1450,
+      "maxSpeed": 14,
+      "bounds": {
+        "min": [
+          -1.01,
+          0,
+          -2.265
+        ],
+        "max": [
+          1.01,
+          1.433,
+          2.265
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.7677,
+          0.3196,
+          1.5215
+        ],
+        "fr": [
+          -0.7852,
+          0.3196,
+          1.5215
+        ],
+        "rl": [
+          0.7677,
+          0.3196,
+          -1.2685
+        ],
+        "rr": [
+          -0.7852,
+          0.3196,
+          -1.2685
+        ]
+      },
+      "wheelRadius": 0.32,
+      "paintMaterials": [
+        "e90_body"
+      ],
+      "glassMaterials": [],
+      "headlightMaterials": [
+        "e90_lamps_head"
+      ],
+      "taillightMaterials": [
+        "e90_lamps_tail"
+      ],
+      "tris": 11930,
+      "sizeBytes": 178812,
+      "notes": "Windows are opaque black (no interior), so glassMaterials is intentionally empty. A hidden red text mesh inside the cabin was removed. Real BMW design and roundel badges."
+    },
+    {
+      "id": "bmw_x5m",
+      "file": "traffic_bmw_x5m.glb",
+      "role": "traffic",
+      "kind": "suv",
+      "make": "BMW",
+      "name": "BMW X5 M (G05, 2019)",
+      "source": "https://sketchfab.com/3d-models/bmw-x5m-g05-2019-low-poly-style-e773437296c248a6b8eebb0729fce978",
+      "downloadUrl": "https://huggingface.co/datasets/allenai/objaverse/resolve/main/glbs/000-127/e773437296c248a6b8eebb0729fce978.glb",
+      "license": "CC-BY-4.0",
+      "credit": "\"BMW X5M G05 2019 Low Poly Style\" (https://sketchfab.com/3d-models/bmw-x5m-g05-2019-low-poly-style-e773437296c248a6b8eebb0729fce978) by Der_Strothi (https://sketchfab.com/der_strothi), licensed under CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Modified for ywgidrive: re-oriented/rescaled, wheels split, materials split/renamed, decimated and compressed.",
+      "author": "Der_Strothi",
+      "authorUrl": "https://sketchfab.com/der_strothi",
+      "forwardAxis": "+z",
+      "upAxis": "+y",
+      "lengthMeters": 4.94,
+      "massKg": 2310,
+      "maxSpeed": 14,
+      "bounds": {
+        "min": [
+          -1.121,
+          0.009,
+          -2.469
+        ],
+        "max": [
+          1.121,
+          1.792,
+          2.47
+        ]
+      },
+      "wheels": {
+        "fl": "wheel_fl",
+        "fr": "wheel_fr",
+        "rl": "wheel_rl",
+        "rr": "wheel_rr"
+      },
+      "wheelCenters": {
+        "fl": [
+          0.8331,
+          0.3828,
+          1.5946
+        ],
+        "fr": [
+          -0.8332,
+          0.3828,
+          1.5946
+        ],
+        "rl": [
+          0.8331,
+          0.3828,
+          -1.3799
+        ],
+        "rr": [
+          -0.8332,
+          0.3828,
+          -1.3799
+        ]
+      },
+      "wheelRadius": 0.383,
+      "paintMaterials": [
+        "x5_paint_tanzanite_blue"
+      ],
+      "glassMaterials": [],
+      "headlightMaterials": [
+        "headlight_inside",
+        "lens",
+        "led_stripe_left"
+      ],
+      "taillightMaterials": [
+        "tail_lights_red",
+        "led_tail_light",
+        "led_brake_lamp",
+        "brake_light"
+      ],
+      "tris": 30323,
+      "sizeBytes": 491732,
+      "notes": "Untextured. Windows are opaque (no interior). Simplified from 55k to ~30k tris (meshopt, permissive). KHR_materials_transmission was stripped (expensive in three.js). Real BMW design and badges."
+    }
+  ]
+}

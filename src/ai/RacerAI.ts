@@ -64,6 +64,7 @@ export class RacerAI {
   private avoidHold = 0;
   private avoidSide = 1;
   private avoidSideTimer = 0;
+  private oncomingBias = 0;
   private integ = 0;
   private stuckTimer = 0;
   private recovering = false;
@@ -127,6 +128,63 @@ export class RacerAI {
     this.avoid = 0;
     this.avoidTarget = 0;
     this.proj.index = -1;
+  }
+
+  /**
+   * Pick a clear spot to put this car back on track (after needsReset): a few meters behind where it is,
+   * on the racing line or the nearest free lane, away from any obstacle (wrecks, traffic, racers).
+   */
+  findResetSpot(obstacles: AIObstacle[]): { s: number; lateral: number } {
+    const track = this.track;
+    const base = this.proj.index >= 0 ? this.proj.s : 0;
+    const lim = track.halfWidth - this.vehicle.spec.bodyHalf[0] - 1.0;
+    for (const back of [6, 14, 24, 36, 50, 70]) {
+      const s = track.wrapS(base - back);
+      const lats = [track.racingLineAt(s), ...track.lanes.map((l) => l), 0];
+      lats.sort((a, b) => Math.abs(a - track.racingLineAt(s)) - Math.abs(b - track.racingLineAt(s)));
+      for (const latRaw of lats) {
+        const lat = THREE.MathUtils.clamp(latRaw, -lim, lim);
+        let clear = true;
+        for (const o of obstacles) {
+          if (Math.abs(track.deltaS(s, o.s)) < o.halfLength + 9 && Math.abs(o.lateral - lat) < o.halfWidth + 2.2) {
+            clear = false;
+            break;
+          }
+        }
+        if (clear) return { s, lateral: lat };
+      }
+    }
+    return { s: track.wrapS(base - 6), lateral: 0 };
+  }
+
+  /** Lateral offset with the most clearance from obstacles in the next ~18 m (for unsticking). */
+  private freeLateral(s: number, obstacles: AIObstacle[]): number {
+    const track = this.track;
+    const wide = track.halfWidth - this.vehicle.spec.bodyHalf[0] - 0.4;
+    let best = 0;
+    let bestScore = -Infinity;
+    for (let lat = -wide; lat <= wide + 1e-6; lat += 0.5) {
+      let clear = 6;
+      for (const o of obstacles) {
+        const ds = track.deltaS(s, o.s);
+        if (ds < -4 || ds > 18) continue;
+        clear = Math.min(clear, Math.abs(o.lateral - lat) - o.halfWidth - this.vehicle.spec.bodyHalf[0]);
+      }
+      // prefer the race-direction side and the racing line a little
+      const score = clear + (lat > 0 ? 0.3 : 0) - Math.abs(lat - track.racingLineAt(s)) * 0.05;
+      if (score > bestScore) {
+        bestScore = score;
+        best = lat;
+      }
+    }
+    return best;
+  }
+
+  /** Highest speed from which we can still settle in behind a car doing `leadV` that is `gap` meters ahead. */
+  private followSpeed(leadV: number, gap: number): number {
+    const a = 0.75 * G * this.gripMu;
+    const lv = Math.max(0, leadV);
+    return Math.sqrt(lv * lv + 2 * a * Math.max(0, gap - 4));
   }
 
   /** Speed target at arc length s for this car (m/s). */
@@ -218,7 +276,8 @@ export class RacerAI {
     this.outTimer = outside ? this.outTimer + dt : 0;
     const tdot = veh.forward.x * track.tx[p.index] + veh.forward.y * track.ty[p.index] + veh.forward.z * track.tz[p.index];
     this.wrongWayTimer = tdot < -0.3 ? this.wrongWayTimer + dt : 0;
-    if (this.lastS >= 0) this.progressAcc += track.deltaS(this.lastS, s);
+    // ignore projection jumps (e.g. a car outside the walls flipping between two parts of the circuit)
+    if (this.lastS >= 0) this.progressAcc += THREE.MathUtils.clamp(track.deltaS(this.lastS, s), -1, Math.abs(v) * dt * 1.5 + 0.5);
     this.lastS = s;
     this.progressTimer += dt;
     if (this.progressTimer > 8) {
@@ -265,12 +324,14 @@ export class RacerAI {
       const oi = track.wrap(Math.floor(track.wrapS(o.s) / track.step));
       const oAlong = o.velocity.x * track.tx[oi] + o.velocity.y * track.ty[oi] + o.velocity.z * track.tz[oi];
       const closing = v - oAlong;
-      const range = THREE.MathUtils.clamp(closing * 3.2, 45, 220);
+      const range = THREE.MathUtils.clamp(closing * 4.5, 45, 260);
       if (ds > range) continue;
       const gap = ds - myHalfL - o.halfLength;
       if (closing <= 0.5 && gap > 6) continue;
       const ttc = gap > 0 ? gap / Math.max(closing, 0.1) : 0;
-      if (ttc > 3.2) continue;
+      if (ttc > 4.5) continue;
+      // head-on traffic in the oncoming lanes ahead: drift back toward the race-direction side early
+      if (oAlong < -2 && o.lateral < 0 && ttc < 4.5) this.oncomingBias = Math.max(this.oncomingBias, THREE.MathUtils.clamp(1.2 - ttc * 0.2, 0.3, 1));
       // where will we be laterally when we reach it
       const blend = THREE.MathUtils.clamp(ds / 40, 0, 1);
       const planned = THREE.MathUtils.clamp(track.racingLineAt(o.s) + this.laneBias + this.avoid, -lim, lim);
@@ -344,12 +405,14 @@ export class RacerAI {
         const move = Math.max(0, clearNeed - Math.abs(curLat - o.lateral));
         const tMove = move / (avoidRate * 0.8) + 0.25;
         if (crawl) blockSpeed = Math.min(blockSpeed, 6 + Math.max(0, urgentTtc - 1) * 6);
-        else if (urgentTtc < tMove) blockSpeed = oncoming ? Math.max(v * 0.7, 8) : Math.max(oAlong + 1, 0);
-      } else if (urgentTtc < 2.2) {
-        blockSpeed = Math.max(oAlong - 1.5, 0);
+        else if (urgentTtc < tMove) blockSpeed = oncoming ? Math.max(v * 0.7, 8) : this.followSpeed(oAlong, dsO - myHalfL - o.halfLength);
+      } else {
+        // boxed in: brake early enough to settle in behind it
+        blockSpeed = Math.min(blockSpeed, this.followSpeed(oAlong, dsO - myHalfL - o.halfLength));
       }
     }
     if (this.avoidSideTimer > 0) this.avoidSideTimer -= dt;
+    this.oncomingBias = Math.max(0, this.oncomingBias - dt * 0.5);
     if (this.avoidHold > 0) this.avoidHold -= dt;
     else this.avoidTarget *= Math.max(0, 1 - dt * 0.8);
     this.avoid += THREE.MathUtils.clamp(this.avoidTarget - this.avoid, -avoidRate * dt, avoidRate * dt);
@@ -362,7 +425,9 @@ export class RacerAI {
     const sT = s + ld;
     this.wobblePhase += dt;
     const wob = this.mistakeLat * Math.sin(this.wobblePhase * 1.7);
-    const latT = THREE.MathUtils.clamp(track.racingLineAt(sT) + this.laneBias + this.avoid + wob, -lim, lim);
+    let latBase = track.racingLineAt(sT) + this.laneBias + this.avoid + wob;
+    if (this.oncomingBias > 0) latBase = Math.max(latBase, THREE.MathUtils.lerp(-lim, 1.2, this.oncomingBias));
+    const latT = THREE.MathUtils.clamp(latBase, -lim, lim);
     track.pointAt(sT, latT, _tgt);
     _d.subVectors(_tgt, _rear);
     _left.set(1, 0, 0).applyQuaternion(veh.quaternion);
@@ -457,7 +522,15 @@ export class RacerAI {
       this.recovering = true;
       this.recoverTimer = 0;
       this.stuckTimer = 0;
-      this.recoverSteer = steer >= 0 ? -1 : 1;
+      // back out so the nose points at the most open gap, then commit to that gap when driving off
+      const free = this.freeLateral(s, ctx.obstacles);
+      const dir = Math.sign(free - p.lateral) || (steer >= 0 ? 1 : -1);
+      this.recoverSteer = -dir;
+      this.avoidTarget = free - (track.racingLineAt(s) + this.laneBias);
+      this.avoid = this.avoidTarget;
+      this.avoidHold = 3.5;
+      this.avoidSide = dir > 0 ? 1 : -1;
+      this.avoidSideTimer = 3.5;
     }
     if (this.recovering) {
       this.recoverTimer += dt;

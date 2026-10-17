@@ -6,7 +6,7 @@ import { worldUniforms } from './TrackMaterials';
 
 /** Neon / lightbox sign atlas drawn with Canvas2D at load, plus instanced placement on facades. */
 
-type Kind = 'h' | 'v' | 'b';
+type Kind = 'h' | 'v' | 'b' | 'd';
 interface Cell {
   kind: Kind;
   u: number;
@@ -17,6 +17,7 @@ interface Cell {
 }
 
 const SIZE = 2048;
+const SIZE_H = 2304;
 
 const H_WORDS = [
   'RAMEN', 'HOTEL', 'BAR', 'KARAOKE', 'SUSHI', 'OPEN 24H', 'NOODLES', 'CLUB', 'ARCADE', 'CAFE', 'DINER', 'GARAGE',
@@ -100,10 +101,10 @@ export class NeonAtlas {
   constructor() {
     const canvas = document.createElement('canvas');
     canvas.width = SIZE;
-    canvas.height = SIZE;
+    canvas.height = SIZE_H;
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, SIZE, SIZE);
+    ctx.fillRect(0, 0, SIZE, SIZE_H);
     const r = new Rng(4242);
     const fonts = ['900 italic', 'bold', '800', 'bold italic'];
     const families = ['"Arial Black", Impact, sans-serif', 'Impact, "Arial Narrow", sans-serif', '"Trebuchet MS", Verdana, sans-serif', 'Georgia, "Times New Roman", serif', '"Courier New", monospace'];
@@ -147,7 +148,7 @@ export class NeonAtlas {
         }
       }
       ctx.restore();
-      this.cells.push({ kind: 'h', u: x / SIZE, v: 1 - (y + 128) / SIZE, w: 512 / SIZE, h: 128 / SIZE, aspect: 4 });
+      this.cells.push({ kind: 'h', u: x / SIZE, v: 1 - (y + 128) / SIZE_H, w: 512 / SIZE, h: 128 / SIZE_H, aspect: 4 });
     }
     // block B: 16 vertical lightboxes / neon glyph banners, 128x512 at y=768
     for (let k = 0; k < 16; k++) {
@@ -191,7 +192,7 @@ export class NeonAtlas {
         }
       }
       ctx.restore();
-      this.cells.push({ kind: 'v', u: x / SIZE, v: 1 - (y + 512) / SIZE, w: 128 / SIZE, h: 512 / SIZE, aspect: 0.25 });
+      this.cells.push({ kind: 'v', u: x / SIZE, v: 1 - (y + 512) / SIZE_H, w: 128 / SIZE, h: 512 / SIZE_H, aspect: 0.25 });
     }
     // block C: 8 billboards 512x256 at y = 1280 (2 rows) + 4 more neon icons
     for (let k = 0; k < ADS.length; k++) {
@@ -231,7 +232,7 @@ export class NeonAtlas {
       ctx.lineWidth = 5;
       ctx.strokeRect(x + 10, y + 10, 492, 236);
       ctx.restore();
-      this.cells.push({ kind: 'b', u: x / SIZE, v: 1 - (y + 256) / SIZE, w: 512 / SIZE, h: 256 / SIZE, aspect: 2 });
+      this.cells.push({ kind: 'b', u: x / SIZE, v: 1 - (y + 256) / SIZE_H, w: 512 / SIZE, h: 256 / SIZE_H, aspect: 2 });
     }
     // block D: neon icon signs (arrows, cocktail, star, heart, cross) 256x256 at y=1792
     const icons = ['arrow', 'glass', 'star', 'heart', 'cross', 'bolt', 'ring', 'chevrons'];
@@ -257,7 +258,29 @@ export class NeonAtlas {
         drawIcon(ctx, ic, x + 128, y + 128, 90);
       }
       ctx.restore();
-      this.cells.push({ kind: 'h', u: x / SIZE, v: 1 - (y + 256) / SIZE, w: 256 / SIZE, h: 256 / SIZE, aspect: 1 });
+      this.cells.push({ kind: 'h', u: x / SIZE, v: 1 - (y + 256) / SIZE_H, w: 256 / SIZE, h: 256 / SIZE_H, aspect: 1 });
+    });
+
+    // block E: industrial lightboxes for the docks, 512x128 at y=2048
+    const DOCKS = ['PIER 7', 'LOGISTICS', 'CUSTOMS', 'COLD STORAGE', 'DRY DOCK 3', 'CARGO', 'BERTH 12', 'YWGI FREIGHT'];
+    DOCKS.forEach((word, k) => {
+      const x = (k % 4) * 512, y = 2048 + Math.floor(k / 4) * 128;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, 512, 128);
+      ctx.clip();
+      const warm = k % 3 === 0;
+      ctx.fillStyle = warm ? '#ffd35a' : '#eef3ff';
+      ctx.globalAlpha = 0.8;
+      ctx.fillRect(x + 8, y + 14, 496, 100);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = warm ? '#1a1206' : '#0b1a3a';
+      ctx.font = 'bold 72px "Arial Black", Impact, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(word, x + 256, y + 66, 470);
+      ctx.restore();
+      this.cells.push({ kind: 'd', u: x / SIZE, v: 1 - (y + 128) / SIZE_H, w: 512 / SIZE, h: 128 / SIZE_H, aspect: 4 });
     });
 
     this.texture = new THREE.CanvasTexture(canvas);
@@ -364,6 +387,15 @@ export function placeSigns(atlas: NeonAtlas, facades: Facade[], seed = 77): Sign
   const out: SignInstance[] = [];
   const up = new THREE.Vector3(0, 1, 0);
   for (const f of facades) {
+    if ((f.zone === 'docks' || f.zone === 'harbor') && f.height > 8 && f.height < 20 && r.chance(0.7)) {
+      const cell = atlas.pick('d', r);
+      const w = Math.min(f.width * 0.6, 14);
+      const h = w / 4;
+      const pos = f.pos.clone().addScaledVector(f.normal, 0.2);
+      pos.y += f.height - h / 2 - 1.2;
+      out.push({ cell, pos, normal: f.normal.clone(), up: new THREE.Vector3(0, 1, 0), width: w, height: h, color: new THREE.Color(1, 1, 1).multiplyScalar(r.range(1.3, 2.0)), flicker: r.chance(0.1) ? 2 : 0, phase: r.next() });
+      if (f.zone === 'docks') continue;
+    }
     const dense = f.zone === 'downtown' ? 1 : f.zone === 'harbor' ? 0.6 : f.zone === 'docks' ? 0.25 : f.zone === 'park' ? 0.35 : 0.15;
     if (!r.chance(0.35 + dense * 0.6)) continue;
     const bright = () => r.range(2.2, 4.5);

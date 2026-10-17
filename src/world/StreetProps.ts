@@ -142,7 +142,7 @@ export class StreetProps {
   private lightCones(list: Inst[]): THREE.InstancedMesh {
     const geo = new THREE.ConeGeometry(1, 1, 28, 6, true).translate(0, -0.5, 0);
     const mat = new THREE.ShaderMaterial({
-      uniforms: { ...THREE.UniformsLib.fog, uStrength: { value: 0.05 } },
+      uniforms: { ...THREE.UniformsLib.fog, uStrength: { value: 0.11 } },
       vertexShader: /* glsl */ `
         #include <common>
         #include <fog_pars_vertex>
@@ -528,6 +528,7 @@ export class StreetProps {
       const zone = t.zoneAt(i);
       if (zone !== 'park' && zone !== 'hills' && !(zone === 'harbor' && i % 12 === 0)) continue;
       for (const side of [-1, 1]) {
+        if (zone === 'harbor' && side < 0) continue;
         if (!r.chance(zone === 'park' ? 0.85 : 0.55)) continue;
         const lat = side * (t.halfWidth + t.sidewalk[i] + r.range(3.5, 9));
         tryTree(t.px[i] + t.rx[i] * lat + r.range(-1.5, 1.5), t.pz[i] + t.rz[i] * lat + r.range(-1.5, 1.5), r.range(0.8, 1.3));
@@ -563,7 +564,8 @@ export class StreetProps {
     const r = new Rng(808);
     const boxes: Inst[] = [];
     const colors = [0xb0301f, 0x1f4fa8, 0xd2731c, 0x2c7a3c, 0x8a8f96, 0xd8d8d0, 0x6b2a7a, 0x0f6f7a].map((c) => new THREE.Color(c));
-    for (const y of this.city.yards) {
+    this.city.yards.forEach((y, yi) => {
+      const ysample = this.lamps.extraBase + yi;
       const c = Math.cos(y.yaw), s = Math.sin(y.yaw);
       const nx = Math.max(1, Math.floor(y.w / 13));
       const nz = Math.max(1, Math.floor(y.d / 3.0));
@@ -580,13 +582,36 @@ export class StreetProps {
               pos: new THREE.Vector3(px, y.y - 0.1 + k * 2.6, pz),
               quat: new THREE.Quaternion().setFromAxisAngle(UP, y.yaw + Math.PI / 2 + r.range(-0.02, 0.02)),
               scale: new THREE.Vector3(12.2, 2.59, 2.44),
-              sample: this.grid.nearest(px, pz, 70).index,
+              sample: ysample,
               color: r.pick(colors).clone().multiplyScalar(r.range(0.55, 1.0)),
             });
           }
         }
       }
+    });
+    // floodlight masts in the yards
+    const masts: Inst[] = [];
+    const mastHeads: Inst[] = [];
+    const mastCones: Inst[] = [];
+    for (let yi = 0; yi < this.city.yards.length; yi++) {
+      const y = this.city.yards[yi];
+      const c = Math.cos(y.yaw), s = Math.sin(y.yaw);
+      const lx = y.w / 2 + 1.5, lz = -y.d / 2;
+      const px = y.x + lx * c + lz * s;
+      const pz = y.z - lx * s + lz * c;
+      const base = new THREE.Vector3(px, y.y, pz);
+      const si = this.lamps.extraBase + yi;
+      masts.push({ pos: base, quat: new THREE.Quaternion(), scale: new THREE.Vector3(1.6, 22, 1.6), sample: si });
+      const head = base.clone().add(new THREE.Vector3(0, 22.3, 0));
+      mastHeads.push({ pos: head, quat: new THREE.Quaternion().setFromAxisAngle(UP, y.yaw), scale: new THREE.Vector3(3.2, 0.5, 1.2), sample: si, color: new THREE.Color(14, 7.5, 2.6) });
+      mastCones.push({ pos: head, quat: new THREE.Quaternion(), scale: new THREE.Vector3(14, 22.5, 14), sample: si, color: new THREE.Color(1.0, 0.6, 0.3) });
     }
+    if (masts.length) {
+      this.group.add(instanced(new THREE.CylinderGeometry(0.08, 0.16, 1, 8).translate(0, 0.5, 0), this.darkMetal, masts, 'yardMasts'));
+      this.group.add(instanced(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), mastHeads, 'yardLights', false));
+      if (this.quality.bloom) this.group.add(this.lightCones(mastCones));
+    }
+
     const geo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
     const mat = applyPatches(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.5 }), [
       this.lamps.patch({ flat: true }),
