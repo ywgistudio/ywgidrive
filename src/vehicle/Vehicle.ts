@@ -163,6 +163,11 @@ export class Vehicle {
   private Blat: number;
   private Blong: number;
   private driven: Wheel[];
+  private rearDriven: boolean;
+  private tanPeakLat: number;
+  private readonly _rv = { x: 0, y: 0, z: 0 };
+  private readonly _rq = { x: 0, y: 0, z: 0, w: 1 };
+  private readonly _imp = { x: 0, y: 0, z: 0 };
   readonly totalGearRatioCache: number[];
 
   constructor(world: RAPIER.World, spec: CarSpec, pos: THREE.Vector3, quat: THREE.Quaternion) {
@@ -206,6 +211,8 @@ export class Vehicle {
       w.driven = spec.drive === 'AWD' || (spec.drive === 'RWD' ? !w.front : w.front);
     }
     this.driven = this.wheels.filter((w) => w.driven);
+    this.rearDriven = spec.drive !== 'FWD';
+    this.tanPeakLat = Math.tan(spec.tireLat.peakSlip);
     this.ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
     this.totalGearRatioCache = spec.gears.map((g) => g * spec.finalDrive);
     this.syncState();
@@ -272,7 +279,7 @@ export class Vehicle {
     const ds = target - this.steerSmoothed;
     this.steerSmoothed += THREE.MathUtils.clamp(ds, -rate * dt, rate * dt);
     const vv = Math.max(Math.abs(vLong), 1);
-    const gripSteer = Math.atan((spec.wheelbase * spec.tireLat.mu * G * 1.05) / (vv * vv)) + spec.tireLat.peakSlip * 1.1;
+    const gripSteer = Math.atan((spec.wheelbase * spec.tireLat.mu * G * 1.05) / (vv * vv)) + spec.tireLat.peakSlip * 0.85;
     const maxSteer = Math.min(spec.maxSteer, gripSteer);
     let angle = -this.steerSmoothed * maxSteer; // positive = left
     // Countersteer assist: align front wheels with the direction of travel while sliding.
@@ -387,13 +394,13 @@ export class Vehicle {
   substep(dt: number) {
     const spec = this.spec;
     const body = this.body;
-    const t = body.translation();
-    const q = body.rotation();
-    const lv = body.linvel();
-    const av = body.angvel();
+    const t = body.translation(this._rv);
     _pos.set(t.x, t.y, t.z);
+    const q = body.rotation(this._rq);
     _q.set(q.x, q.y, q.z, q.w);
+    const lv = body.linvel(this._rv);
     _lv.set(lv.x, lv.y, lv.z);
+    const av = body.angvel(this._rv);
     _av.set(av.x, av.y, av.z);
     _fwd.set(0, 0, 1).applyQuaternion(_q);
     _up.set(0, 1, 0).applyQuaternion(_q);
@@ -480,7 +487,7 @@ export class Vehicle {
     const drivenOmega = this.drivenOmega();
     const shifting = this.shiftTimer > 0;
     // Pulling the handbrake hard dips the clutch (classic drift pull) so the engine free-revs.
-    const clutchIn = inp.handbrake > 0.5 && this.driven.some((w) => !w.front);
+    const clutchIn = inp.handbrake > 0.5 && this.rearDriven;
     const inGear = this.gear !== 0 && !shifting && !clutchIn;
     const wheelRpm = Math.abs(drivenOmega * gr * RAD2RPM);
     let coupled = 0; // how much engine inertia is rigidly tied to the driven wheels
@@ -544,25 +551,18 @@ export class Vehicle {
       w.driveTorque = 0;
       w.inertiaEff = spec.wheelInertia + (w.driven ? reflected : 0);
     }
-    const lsd = (l: Wheel, r: Wheel, T: number) => {
-      const dOmega = l.omega - r.omega;
-      const lock = spec.lsdPreload + spec.lsdLock * Math.abs(T);
-      const transfer = THREE.MathUtils.clamp(dOmega * 40, -lock, lock);
-      l.driveTorque += T * 0.5 - transfer;
-      r.driveTorque += T * 0.5 + transfer;
-    };
     if (spec.drive === 'AWD') {
       // center diff: viscous bias to the slower axle
       const fo = (this.wheels[0].omega + this.wheels[1].omega) * 0.5;
       const ro = (this.wheels[2].omega + this.wheels[3].omega) * 0.5;
       const centerLock = 0.25 * Math.abs(axleTorque) + 40;
       const cTransfer = THREE.MathUtils.clamp((fo - ro) * 30, -centerLock, centerLock);
-      lsd(this.wheels[0], this.wheels[1], axleTorque * spec.frontSplit - cTransfer);
-      lsd(this.wheels[2], this.wheels[3], axleTorque * (1 - spec.frontSplit) + cTransfer);
+      this.applyLsd(this.wheels[0], this.wheels[1], axleTorque * spec.frontSplit - cTransfer);
+      this.applyLsd(this.wheels[2], this.wheels[3], axleTorque * (1 - spec.frontSplit) + cTransfer);
     } else if (spec.drive === 'RWD') {
-      lsd(this.wheels[2], this.wheels[3], axleTorque);
+      this.applyLsd(this.wheels[2], this.wheels[3], axleTorque);
     } else {
-      lsd(this.wheels[0], this.wheels[1], axleTorque);
+      this.applyLsd(this.wheels[0], this.wheels[1], axleTorque);
     }
 
     // brakes
@@ -621,22 +621,7 @@ export class Vehicle {
       const R = w.radius;
       // current longitudinal force for the implicit wheel update
       let kappa = (w.omega * R - vx) / vden;
-      const forces = (k: number, a: number) => {
-        const sx = k / lonC.peakSlip;
-        const sy = Math.tan(a) / Math.tan(latC.peakSlip);
-        const rho = Math.hypot(sx, sy);
-        if (rho < 1e-7) {
-          _fx = 0;
-          _fy = 0;
-          return;
-        }
-        const fxp = Dlong * pacejka(rho * lonC.peakSlip, this.Blong, lonC.C, lonC.E);
-        const fyp = Dlat * pacejka(rho * latC.peakSlip, this.Blat, latC.C, latC.E);
-        _fx = (fxp * sx) / rho;
-        _fy = (-fyp * sy) / rho;
-        _rho = rho;
-      };
-      forces(kappa, w.alpha);
+      this.tireForces(kappa, w.alpha, Dlong, Dlat);
       const Kx = this.Blong * lonC.C * Dlong;
       const denom = w.inertiaEff + (dt * Kx * R * R) / vden;
       let omega = w.omega + (dt * (w.driveTorque - R * _fx)) / denom;
@@ -647,7 +632,7 @@ export class Vehicle {
       w.omega = omega;
       kappa = (omega * R - vx) / vden;
       w.slipRatio = kappa;
-      forces(kappa, w.alpha);
+      this.tireForces(kappa, w.alpha, Dlong, Dlat);
       let Fx = _fx;
       let Fy = _fy;
 
@@ -736,10 +721,46 @@ export class Vehicle {
       this.airTime = 0;
     }
 
-    body.applyImpulse({ x: _F.x * dt, y: _F.y * dt, z: _F.z * dt }, true);
-    body.applyTorqueImpulse({ x: _T.x * dt, y: _T.y * dt, z: _T.z * dt }, true);
+    const imp = this._imp;
+    imp.x = _F.x * dt;
+    imp.y = _F.y * dt;
+    imp.z = _F.z * dt;
+    body.applyImpulse(imp, true);
+    imp.x = _T.x * dt;
+    imp.y = _T.y * dt;
+    imp.z = _T.z * dt;
+    body.applyTorqueImpulse(imp, true);
 
     for (const w of this.wheels) w.spin += w.omega * dt;
+  }
+
+  /** Combined-slip Pacejka (normalised slip vector). Writes module scratch _fx/_fy/_rho. */
+  private tireForces(k: number, a: number, Dlong: number, Dlat: number) {
+    const lonC = this.spec.tireLong;
+    const latC = this.spec.tireLat;
+    const sx = k / lonC.peakSlip;
+    const sy = Math.tan(a) / this.tanPeakLat;
+    const rho = Math.hypot(sx, sy);
+    if (rho < 1e-7) {
+      _fx = 0;
+      _fy = 0;
+      _rho = 0;
+      return;
+    }
+    const fxp = Dlong * pacejka(rho * lonC.peakSlip, this.Blong, lonC.C, lonC.E);
+    const fyp = Dlat * pacejka(rho * latC.peakSlip, this.Blat, latC.C, latC.E);
+    _fx = (fxp * sx) / rho;
+    _fy = (-fyp * sy) / rho;
+    _rho = rho;
+  }
+
+  private applyLsd(l: Wheel, r: Wheel, T: number) {
+    const spec = this.spec;
+    const dOmega = l.omega - r.omega;
+    const lock = spec.lsdPreload + spec.lsdLock * Math.abs(T);
+    const transfer = THREE.MathUtils.clamp(dOmega * 40, -lock, lock);
+    l.driveTorque += T * 0.5 - transfer;
+    r.driveTorque += T * 0.5 + transfer;
   }
 
   /** World-space wheel center for rendering, derived from suspension compression. */

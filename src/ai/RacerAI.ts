@@ -56,7 +56,7 @@ export class RacerAI {
   /** Latest projection of the car onto the track. */
   readonly proj: Projection = { index: -1, s: 0, lateral: 0, height: 0 };
   /** Telemetry for debugging/tuning. */
-  readonly debug = { vCmd: 0, latTarget: 0, avoid: 0, blocked: false };
+  readonly debug = { vCmd: 0, latTarget: 0, avoid: 0, blocked: false, resetReason: '' };
 
   private gripMu: number;
   private avoid = 0; // lateral offset relative to the racing line (m)
@@ -195,7 +195,8 @@ export class RacerAI {
     const s = p.s;
     const v = veh.speed;
     const hw = track.halfWidth;
-    const lim = hw - 1.5;
+    // keep the body ~1.4 m off the curb line so braking drift / curb hops don't spin the car
+    const lim = hw - spec.bodyHalf[0] - 1.4;
 
     if (!ctx.raceStarted) {
       inp.throttle = 0;
@@ -218,11 +219,17 @@ export class RacerAI {
     this.lastS = s;
     this.progressTimer += dt;
     if (this.progressTimer > 8) {
-      if (this.progressAcc < 15) this.needsReset = true;
+      if (this.progressAcc < 15) {
+        this.needsReset = true;
+        this.debug.resetReason = 'no-progress';
+      }
       this.progressTimer = 0;
       this.progressAcc = 0;
     }
-    if (this.flipTimer > 2.5 || this.outTimer > 1.0 || this.wrongWayTimer > 5) this.needsReset = true;
+    if (this.flipTimer > 2.5 || this.outTimer > 1.0 || this.wrongWayTimer > 5) {
+      this.needsReset = true;
+      this.debug.resetReason = this.flipTimer > 2.5 ? 'flipped' : this.outTimer > 1 ? 'out-of-bounds' : 'wrong-way';
+    }
 
     // ---------- mistakes (low skill only) ----------
     this.mistakeTimer -= dt;
@@ -370,9 +377,22 @@ export class RacerAI {
     let brake = THREE.MathUtils.clamp(-u * 0.9, 0, 1);
     if (err > -0.6) brake = 0;
     if (brake > 0) throttle = 0;
-    // sliding: feather the throttle
+    // spinning: braking hard makes it worse - ease off and let the countersteer catch it
+    const spin = Math.abs(veh.bodySlip);
+    if (spin > 0.2 && vAbs > 10) brake = Math.min(brake, THREE.MathUtils.clamp(0.6 - (spin - 0.2) * 2, 0.15, 0.6));
+    // sliding: feather the throttle early (RWD power oversteer), harder the further it steps out
     const slip = Math.abs(veh.bodySlip);
-    if (slip > 0.16) throttle *= THREE.MathUtils.clamp(1 - (slip - 0.16) * 3, 0.25, 1);
+    if (slip > 0.07 && vAbs > 8) throttle *= THREE.MathUtils.clamp(1 - (slip - 0.07) * 4.5, 0.1, 1);
+    // edge guard: drifting toward the curb/wall -> lift and steer back toward the middle
+    const ri = p.index;
+    const latVel = veh.velocity.x * track.rx[ri] + veh.velocity.y * track.ry[ri] + veh.velocity.z * track.rz[ri];
+    const outVel = latVel * Math.sign(p.lateral);
+    const edgeDist = hw - Math.abs(p.lateral) - spec.bodyHalf[0];
+    if (edgeDist < 0.8 && outVel > 0.3 && vAbs > 8) {
+      throttle *= THREE.MathUtils.clamp(edgeDist / 0.8, 0.2, 1);
+      const push = THREE.MathUtils.clamp((0.8 - edgeDist) * 0.25 + outVel * 0.04, 0, 0.35);
+      steer = THREE.MathUtils.clamp(steer - Math.sign(p.lateral) * push, -1, 1);
+    }
 
     // ---------- nitro on straights ----------
     this.nitroCooldown -= dt;

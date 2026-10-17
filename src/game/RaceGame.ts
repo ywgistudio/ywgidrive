@@ -814,8 +814,8 @@ export class RaceGame {
       let skid = 0;
       let surface = 0;
       for (const w of v.wheels) {
-        skid += w.skid;
-        if (w.surfaceKind === 1) surface = 1;
+        if (w.contact) skid = Math.max(skid, w.skid);
+        if (w.contact && w.surfaceKind === 1) surface = 1;
       }
       c.sound.update(
         {
@@ -829,7 +829,7 @@ export class RaceGame {
           shiftEvent: v.shiftEvent,
           backfire: v.backfire > 0,
           speed: Math.abs(v.speed),
-          skid: Math.min(1, skid / 2.2),
+          skid,
           surface,
           position: c.renderPos,
           velocity: v.velocity,

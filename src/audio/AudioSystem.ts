@@ -114,7 +114,7 @@ export class AudioSystem {
 
     // ---- buses ----
     const limiter = ctx.createDynamicsCompressor();
-    limiter.threshold.value = -4;
+    limiter.threshold.value = -6;
     limiter.knee.value = 4;
     limiter.ratio.value = 12;
     limiter.attack.value = 0.002;
@@ -216,7 +216,7 @@ export class AudioSystem {
   private applyVolumes() {
     const ctx = this.ctx;
     if (!ctx || !this.master) return;
-    setParam(this.master.gain, this.volumes.master, ctx, 0.05);
+    setParam(this.master.gain, this.volumes.master * 0.8, ctx, 0.05);
     setParam(this.musicGain!.gain, this.volumes.music * 0.55, ctx, 0.05);
     setParam(this.sfxGain!.gain, this.volumes.sfx, ctx, 0.05);
     setParam(this.uiGain!.gain, this.volumes.sfx * 0.7, ctx, 0.05);

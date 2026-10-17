@@ -37,8 +37,9 @@ void main() {
   // fade near the box edges and very close to the lens
   vec3 d = abs(p - uCam) / (uBox * 0.5);
   float edge = 1.0 - smoothstep(0.7, 1.0, max(max(d.x, d.y), d.z));
-  float nearF = smoothstep(0.4, 1.8, -mv.z);
-  vA = edge * nearF;
+  float nearF = smoothstep(1.2, 4.5, -mv.z);
+  float farF = 1.0 - smoothstep(6.0, uBox.x * 0.5, length(p - uCam)) * 0.75;
+  vA = edge * nearF * farF;
   vAcross = position.x;
   vAlong = position.y;
 }
@@ -92,6 +93,7 @@ export class StreakField {
       transparent: true,
       depthWrite: false,
       blending: opts.additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+      side: THREE.DoubleSide,
     });
     this.mesh = new THREE.Mesh(g, mat);
     this.mesh.frustumCulled = false;

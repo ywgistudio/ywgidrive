@@ -1,0 +1,481 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+
+export type WheelKey = 'fl' | 'fr' | 'rl' | 'rr';
+export const WHEEL_KEYS: WheelKey[] = ['fl', 'fr', 'rl', 'rr']; // same order as Vehicle.wheels
+
+type Axis = '+x' | '-x' | '+y' | '-y' | '+z' | '-z';
+
+/** One entry of public/assets/cars/manifest.{sports,traffic}.json. Everything but id/file is optional. */
+export interface CarModelEntry {
+  id: string;
+  file: string;
+  role?: 'hero' | 'rival' | 'traffic';
+  kind?: string;
+  name?: string;
+  source?: string;
+  license?: string;
+  credit?: string;
+  forwardAxis?: Axis;
+  upAxis?: Axis;
+  lengthMeters?: number;
+  massKg?: number;
+  maxSpeed?: number;
+  bounds?: { min: number[]; max: number[] };
+  wheels?: Partial<Record<WheelKey, string>> | null;
+  wheelCenters?: Partial<Record<WheelKey, number[]>>;
+  wheelRadius?: number;
+  paintMaterials?: string[];
+  glassMaterials?: string[];
+  headlightMaterials?: string[];
+  taillightMaterials?: string[];
+  tris?: number;
+  sizeBytes?: number;
+}
+
+export type MatRole = 'paint' | 'glass' | 'chrome' | 'rubber' | 'metal' | 'head' | 'tail' | 'interior' | 'other';
+
+export interface MergedPart {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material; // template material (already converted for its role)
+  role: MatRole;
+}
+
+export interface PreparedWheel {
+  key: WheelKey;
+  /** wheel center in normalized model space (+Z fwd, +Y up, meters, ground y=0, x/z centered on the bbox) */
+  center: THREE.Vector3;
+  radius: number;
+  /** meshes relative to the wheel center, axle along X */
+  parts: MergedPart[];
+}
+
+/** A model normalized to the physics convention, with merged geometry ready for cheap instancing. */
+export interface PreparedModel {
+  entry: CarModelEntry;
+  body: MergedPart[];
+  wheels: PreparedWheel[] | null; // FL, FR, RL, RR
+  bounds: THREE.Box3; // normalized space, including wheels
+  wheelbase: number;
+  trackFront: number;
+  trackRear: number;
+  wheelRadius: number;
+  wheelCenterY: number;
+  axleMidZ: number;
+  headlights: THREE.Vector3[]; // left/right lamp centers (normalized space)
+  taillights: THREE.Vector3[];
+  exhausts: THREE.Vector3[];
+  hasHeadMat: boolean;
+  hasTailMat: boolean;
+  tris: number;
+}
+
+/** Built-in fallback: the three.js example Ferrari 458 (draco), always available as a realistic hero car. */
+const FALLBACK_SPORTS: CarModelEntry[] = [
+  {
+    id: 'dev_ferrari',
+    file: 'dev_ferrari.glb',
+    role: 'hero',
+    name: 'Ferrari 458 Italia',
+    source: 'https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf',
+    credit: 'Ferrari 458 Italia model by vicent091036 (via three.js examples)',
+    forwardAxis: '-z',
+    upAxis: '+y',
+    lengthMeters: 4.527,
+    wheels: { fl: 'wheel_fl', fr: 'wheel_fr', rl: 'wheel_rl', rr: 'wheel_rr' },
+    paintMaterials: ['Body_Color'],
+    glassMaterials: ['Glass_Gray'],
+    headlightMaterials: ['Projector_Glass', 'Turn_Signal_LED'],
+    taillightMaterials: ['Taillight_Glass'],
+  },
+];
+
+const AXES: Record<Axis, THREE.Vector3> = {
+  '+x': new THREE.Vector3(1, 0, 0),
+  '-x': new THREE.Vector3(-1, 0, 0),
+  '+y': new THREE.Vector3(0, 1, 0),
+  '-y': new THREE.Vector3(0, -1, 0),
+  '+z': new THREE.Vector3(0, 0, 1),
+  '-z': new THREE.Vector3(0, 0, -1),
+};
+
+const RE = {
+  paint: /(body|paint|carpaint|car_paint|exterior|bodywork|shell|coat)/i,
+  glass: /(glass|window|windshield|windscreen)/i,
+  head: /(headl|head_l|head-l|front_?light|frontlamp|projector|headlamp|drl)/i,
+  tail: /(tail|brake_?light|rear_?light|stop_?light|backlight|rearlamp)/i,
+  chrome: /(chrome|mirror_?metal|polished)/i,
+  rubber: /(tire|tyre|rubber)/i,
+  interior: /(interior|leather|carpet|seat|dash|cabin|steering)/i,
+  metal: /(metal|rim|alloy|steel|alu)/i,
+  exhaust: /(exhaust|muffler|tailpipe|tail_pipe)/i,
+};
+
+function classify(name: string, entry: CarModelEntry): MatRole {
+  const inList = (l?: string[]) => !!l && l.some((n) => n === name);
+  if (inList(entry.paintMaterials)) return 'paint';
+  if (inList(entry.glassMaterials)) return 'glass';
+  if (inList(entry.headlightMaterials)) return 'head';
+  if (inList(entry.taillightMaterials)) return 'tail';
+  const explicit = !!(entry.paintMaterials?.length || entry.glassMaterials?.length);
+  if (RE.glass.test(name) && !RE.head.test(name) && !RE.tail.test(name) && !explicit) return 'glass';
+  if (RE.head.test(name) && !entry.headlightMaterials?.length) return 'head';
+  if (RE.tail.test(name) && !entry.taillightMaterials?.length) return 'tail';
+  if (RE.interior.test(name)) return 'interior';
+  if (RE.rubber.test(name)) return 'rubber';
+  if (RE.chrome.test(name)) return 'chrome';
+  if (!explicit && RE.paint.test(name)) return 'paint';
+  if (RE.metal.test(name)) return 'metal';
+  return 'other';
+}
+
+/** Dequantize / de-interleave an attribute into a plain Float32 attribute. */
+function toFloatAttr(attr: THREE.BufferAttribute | THREE.InterleavedBufferAttribute): THREE.BufferAttribute {
+  const n = attr.count;
+  const size = attr.itemSize;
+  const out = new Float32Array(n * size);
+  for (let i = 0; i < n; i++) {
+    out[i * size] = attr.getX(i);
+    if (size > 1) out[i * size + 1] = attr.getY(i);
+    if (size > 2) out[i * size + 2] = attr.getZ(i);
+    if (size > 3) out[i * size + 3] = attr.getW(i);
+  }
+  return new THREE.BufferAttribute(out, size);
+}
+
+/** Clone a mesh geometry into float position/normal/uv, transformed by `m`. */
+function bakeGeometry(src: THREE.BufferGeometry, m: THREE.Matrix4): THREE.BufferGeometry {
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', toFloatAttr(src.getAttribute('position')));
+  if (src.getAttribute('normal')) g.setAttribute('normal', toFloatAttr(src.getAttribute('normal')));
+  const uv = src.getAttribute('uv');
+  if (uv) g.setAttribute('uv', toFloatAttr(uv));
+  else g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(src.getAttribute('position').count * 2), 2));
+  if (src.index) g.setIndex(Array.from(src.index.array as ArrayLike<number>));
+  else {
+    const n = src.getAttribute('position').count;
+    const idx = new Uint32Array(n);
+    for (let i = 0; i < n; i++) idx[i] = i;
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+  }
+  if (!g.getAttribute('normal')) g.computeVertexNormals();
+  g.applyMatrix4(m);
+  // mirrored transforms flip winding
+  if (m.determinant() < 0) {
+    const ix = g.index!.array as Uint32Array | Uint16Array;
+    for (let i = 0; i < ix.length; i += 3) {
+      const t = ix[i + 1];
+      ix[i + 1] = ix[i + 2];
+      ix[i + 2] = t;
+    }
+  }
+  return g;
+}
+
+function convertMaterial(src: THREE.Material, role: MatRole): THREE.Material {
+  const s = src as THREE.MeshStandardMaterial;
+  const map = s.map ?? null;
+  const normalMap = s.normalMap ?? null;
+  const color = s.color ? s.color.clone() : new THREE.Color(0x888888);
+  switch (role) {
+    case 'glass':
+      return new THREE.MeshPhysicalMaterial({
+        name: src.name,
+        color: 0x07090c,
+        metalness: 0.0,
+        roughness: 0.02,
+        transparent: true,
+        opacity: 0.62,
+        envMapIntensity: 2.2,
+        specularIntensity: 1,
+        ior: 1.52,
+        depthWrite: false,
+      });
+    case 'chrome':
+      return new THREE.MeshStandardMaterial({ name: src.name, color: 0xe8e8ea, metalness: 1, roughness: 0.12, envMapIntensity: 1.6 });
+    case 'rubber':
+      return new THREE.MeshStandardMaterial({ name: src.name, color: 0x0d0d0e, metalness: 0, roughness: 0.86, map, normalMap });
+    case 'metal': {
+      const m = new THREE.MeshStandardMaterial({ name: src.name, color: color.lerp(new THREE.Color(0xb8bcc4), 0.4), metalness: 1, roughness: 0.28, map, normalMap, envMapIntensity: 1.4 });
+      return m;
+    }
+    case 'interior': {
+      const m = (src as THREE.MeshStandardMaterial).clone();
+      if ('envMapIntensity' in m) m.envMapIntensity = 0.4;
+      return m;
+    }
+    case 'head':
+    case 'tail':
+    case 'paint':
+      // per-instance materials are created by CarVisual; keep a placeholder
+      return src;
+    default: {
+      const m = (src as THREE.MeshStandardMaterial).clone ? (src as THREE.MeshStandardMaterial).clone() : src;
+      if ((m as THREE.MeshStandardMaterial).isMeshStandardMaterial) (m as THREE.MeshStandardMaterial).envMapIntensity = 1.0;
+      return m;
+    }
+  }
+}
+
+/** Merge meshes (already baked into a common space) by material. */
+function mergeByMaterial(items: { geo: THREE.BufferGeometry; mat: THREE.Material; role: MatRole }[]): MergedPart[] {
+  const groups = new Map<THREE.Material, { geos: THREE.BufferGeometry[]; role: MatRole }>();
+  for (const it of items) {
+    let g = groups.get(it.mat);
+    if (!g) groups.set(it.mat, (g = { geos: [], role: it.role }));
+    g.geos.push(it.geo);
+  }
+  const out: MergedPart[] = [];
+  for (const [mat, g] of groups) {
+    const merged = g.geos.length === 1 ? g.geos[0] : mergeGeometries(g.geos, false);
+    if (!merged) continue;
+    merged.computeBoundingBox();
+    merged.computeBoundingSphere();
+    out.push({ geometry: merged, material: mat, role: g.role });
+  }
+  return out;
+}
+
+function sideCenters(parts: { geo: THREE.BufferGeometry }[]): THREE.Vector3[] {
+  const acc = [new THREE.Vector3(), new THREE.Vector3()];
+  const cnt = [0, 0];
+  for (const p of parts) {
+    const pos = p.geo.getAttribute('position');
+    for (let i = 0; i < pos.count; i += 3) {
+      const x = pos.getX(i);
+      const k = x >= 0 ? 0 : 1;
+      acc[k].x += x;
+      acc[k].y += pos.getY(i);
+      acc[k].z += pos.getZ(i);
+      cnt[k]++;
+    }
+  }
+  const out: THREE.Vector3[] = [];
+  for (let k = 0; k < 2; k++) if (cnt[k] > 0) out.push(acc[k].divideScalar(cnt[k]));
+  return out;
+}
+
+export class CarModels {
+  sports: CarModelEntry[] = [];
+  traffic: CarModelEntry[] = [];
+  private prepared = new Map<string, PreparedModel>();
+  private loader: GLTFLoader;
+  readonly base: string;
+
+  constructor(base = 'assets/cars/') {
+    this.base = base;
+    const draco = new DRACOLoader();
+    draco.setDecoderPath(base.replace(/cars\/?$/, 'draco/'));
+    this.loader = new GLTFLoader();
+    this.loader.setDRACOLoader(draco);
+    this.loader.setMeshoptDecoder(MeshoptDecoder);
+  }
+
+  private async manifest(name: string): Promise<CarModelEntry[]> {
+    try {
+      const r = await fetch(this.base + name, { cache: 'no-cache' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j?.models) ? (j.models as CarModelEntry[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  async load(onProgress?: (p: number) => void): Promise<void> {
+    const [sports, traffic] = await Promise.all([this.manifest('manifest.sports.json'), this.manifest('manifest.traffic.json')]);
+    this.sports = sports;
+    this.traffic = traffic;
+    // the built-in ferrari is always loaded as a guaranteed realistic fallback
+    for (const f of FALLBACK_SPORTS) if (!this.sports.some((e) => e.file === f.file)) this.sports.push(f);
+    const all = [...this.sports, ...this.traffic];
+    let done = 0;
+    onProgress?.(0);
+    const failed: CarModelEntry[] = [];
+    await Promise.all(
+      all.map(async (e) => {
+        try {
+          const gltf = await this.loader.loadAsync(this.base + e.file);
+          this.prepared.set(e.id, this.prepare(e, gltf.scene));
+        } catch (err) {
+          console.warn(`[CarModels] failed to load ${e.file}`, err);
+          failed.push(e);
+        }
+        done++;
+        onProgress?.(done / all.length);
+      }),
+    );
+    this.sports = this.sports.filter((e) => !failed.includes(e));
+    this.traffic = this.traffic.filter((e) => !failed.includes(e));
+    // put real (non-fallback) heroes first
+    this.sports.sort((a, b) => Number(FALLBACK_SPORTS.includes(a)) - Number(FALLBACK_SPORTS.includes(b)));
+  }
+
+  get(id: string): PreparedModel | undefined {
+    return this.prepared.get(id);
+  }
+
+  credits(): string[] {
+    const out: string[] = [];
+    for (const e of [...this.sports, ...this.traffic]) {
+      if (!this.prepared.has(e.id)) continue;
+      const c = e.credit || (e.name ? `${e.name}${e.license ? ` (${e.license})` : ''}` : '');
+      if (c && !out.includes(c)) out.push(c + (e.license && !c.includes(e.license) ? ` — ${e.license}` : ''));
+    }
+    return out;
+  }
+
+  /** Normalize a loaded scene into physics space and merge its geometry per material. */
+  private prepare(entry: CarModelEntry, scene: THREE.Object3D): PreparedModel {
+    scene.updateMatrixWorld(true);
+    // --- orientation
+    let fwd = entry.forwardAxis ? AXES[entry.forwardAxis].clone() : null;
+    const up = (entry.upAxis ? AXES[entry.upAxis] : AXES['+y']).clone();
+    const wheelNodes: Partial<Record<WheelKey, THREE.Object3D>> = {};
+    if (entry.wheels) {
+      for (const k of WHEEL_KEYS) {
+        const n = entry.wheels[k];
+        const o = n ? scene.getObjectByName(n) : undefined;
+        if (o) wheelNodes[k] = o;
+      }
+    }
+    const haveWheels = WHEEL_KEYS.every((k) => wheelNodes[k]);
+    const nodeCenter = (o: THREE.Object3D) => new THREE.Box3().setFromObject(o, true).getCenter(new THREE.Vector3());
+    if (!fwd && haveWheels) {
+      const f = nodeCenter(wheelNodes.fl!).add(nodeCenter(wheelNodes.fr!)).multiplyScalar(0.5);
+      const r = nodeCenter(wheelNodes.rl!).add(nodeCenter(wheelNodes.rr!)).multiplyScalar(0.5);
+      const d = f.sub(r);
+      const ax = Math.abs(d.x) > Math.abs(d.z) ? (d.x > 0 ? '+x' : '-x') : d.z > 0 ? '+z' : '-z';
+      fwd = AXES[ax as Axis].clone();
+    }
+    if (!fwd) fwd = AXES['+z'].clone();
+    const left = new THREE.Vector3().crossVectors(up, fwd).normalize();
+    const basis = new THREE.Matrix4().makeBasis(left, up, fwd); // target -> model
+    const rot = basis.clone().invert(); // model -> target
+
+    // --- scale + center
+    const tmpBox = new THREE.Box3();
+    const meshes: THREE.Mesh[] = [];
+    scene.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh && m.geometry?.getAttribute('position')) meshes.push(m);
+    });
+    const box = new THREE.Box3();
+    for (const m of meshes) {
+      tmpBox.setFromBufferAttribute(m.geometry.getAttribute('position') as THREE.BufferAttribute);
+      tmpBox.applyMatrix4(new THREE.Matrix4().multiplyMatrices(rot, m.matrixWorld));
+      box.union(tmpBox);
+    }
+    const size = box.getSize(new THREE.Vector3());
+    const scale = entry.lengthMeters && size.z > 1e-6 ? entry.lengthMeters / size.z : 1;
+    const center = box.getCenter(new THREE.Vector3());
+    // final: p' = S * (R * p - offset), with ground at y = 0 and x/z centered
+    const offset = new THREE.Vector3(center.x, box.min.y, center.z);
+    const norm = new THREE.Matrix4().makeScale(scale, scale, scale).multiply(new THREE.Matrix4().makeTranslation(-offset.x, -offset.y, -offset.z)).multiply(rot);
+
+    // --- which meshes belong to which wheel
+    const wheelOf = new Map<THREE.Mesh, WheelKey>();
+    if (haveWheels) {
+      for (const k of WHEEL_KEYS) wheelNodes[k]!.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh) wheelOf.set(o as THREE.Mesh, k);
+      });
+    }
+
+    const matCache = new Map<THREE.Material, { mat: THREE.Material; role: MatRole }>();
+    const matFor = (m: THREE.Mesh) => {
+      const src = (Array.isArray(m.material) ? m.material[0] : m.material) as THREE.Material;
+      let c = matCache.get(src);
+      if (!c) {
+        const role = classify(src.name || '', entry);
+        c = { mat: convertMaterial(src, role), role };
+        matCache.set(src, c);
+      }
+      return c;
+    };
+
+    const bodyItems: { geo: THREE.BufferGeometry; mat: THREE.Material; role: MatRole }[] = [];
+    const wheelItems: Record<WheelKey, { geo: THREE.BufferGeometry; mat: THREE.Material; role: MatRole }[]> = { fl: [], fr: [], rl: [], rr: [] };
+    const headParts: { geo: THREE.BufferGeometry }[] = [];
+    const tailParts: { geo: THREE.BufferGeometry }[] = [];
+    const exhaustParts: { geo: THREE.BufferGeometry }[] = [];
+    let tris = 0;
+    const mw = new THREE.Matrix4();
+    for (const m of meshes) {
+      mw.multiplyMatrices(norm, m.matrixWorld);
+      const geo = bakeGeometry(m.geometry, mw);
+      tris += (geo.index ? geo.index.count : geo.getAttribute('position').count) / 3;
+      const { mat, role } = matFor(m);
+      const wk = wheelOf.get(m);
+      if (wk) wheelItems[wk].push({ geo, mat, role });
+      else {
+        bodyItems.push({ geo, mat, role });
+        if (role === 'head') headParts.push({ geo });
+        if (role === 'tail') tailParts.push({ geo });
+        if (RE.exhaust.test(m.name) || RE.exhaust.test(m.parent?.name ?? '')) exhaustParts.push({ geo });
+      }
+    }
+
+    // --- bounds in normalized space
+    const bounds = new THREE.Box3();
+    for (const it of [...bodyItems, ...WHEEL_KEYS.flatMap((k) => wheelItems[k])]) {
+      it.geo.computeBoundingBox();
+      bounds.union(it.geo.boundingBox!);
+    }
+
+    // --- wheels
+    let wheels: PreparedWheel[] | null = null;
+    if (haveWheels) {
+      wheels = WHEEL_KEYS.map((k) => {
+        const wb = new THREE.Box3();
+        for (const it of wheelItems[k]) wb.union(it.geo.boundingBox!);
+        const c = wb.getCenter(new THREE.Vector3());
+        const sz = wb.getSize(new THREE.Vector3());
+        const radius = Math.max(sz.y, sz.z) * 0.5;
+        const t = new THREE.Matrix4().makeTranslation(-c.x, -c.y, -c.z);
+        for (const it of wheelItems[k]) it.geo.applyMatrix4(t);
+        return { key: k, center: c, radius, parts: mergeByMaterial(wheelItems[k]) };
+      });
+    }
+
+    const body = mergeByMaterial(bodyItems);
+    let wheelbase = bounds.max.z - bounds.min.z;
+    let trackFront = bounds.max.x - bounds.min.x;
+    let trackRear = trackFront;
+    let wheelRadius = 0.33;
+    let wheelCenterY = 0.33;
+    let axleMidZ = 0;
+    if (wheels) {
+      const [fl, fr, rl, rr] = wheels;
+      wheelbase = (fl.center.z + fr.center.z) / 2 - (rl.center.z + rr.center.z) / 2;
+      trackFront = Math.abs(fl.center.x - fr.center.x);
+      trackRear = Math.abs(rl.center.x - rr.center.x);
+      wheelRadius = (fl.radius + fr.radius + rl.radius + rr.radius) / 4;
+      wheelCenterY = (fl.center.y + fr.center.y + rl.center.y + rr.center.y) / 4;
+      axleMidZ = (fl.center.z + fr.center.z + rl.center.z + rr.center.z) / 4;
+    } else {
+      // estimate from bounds: typical overhangs
+      const L = bounds.max.z - bounds.min.z;
+      wheelbase = L * 0.6;
+      trackFront = trackRear = (bounds.max.x - bounds.min.x) * 0.84;
+      wheelRadius = Math.min(0.42, (bounds.max.y - bounds.min.y) * 0.24);
+      wheelCenterY = wheelRadius;
+      axleMidZ = (bounds.max.z + bounds.min.z) / 2;
+    }
+
+    const W = bounds.max.x - bounds.min.x;
+    const H = bounds.max.y - bounds.min.y;
+    let headlights = sideCenters(headParts);
+    let taillights = sideCenters(tailParts);
+    const hasHeadMat = headlights.length > 0;
+    const hasTailMat = taillights.length > 0;
+    if (headlights.length < 2) headlights = [new THREE.Vector3(W * 0.33, H * 0.48, bounds.max.z - 0.12), new THREE.Vector3(-W * 0.33, H * 0.48, bounds.max.z - 0.12)];
+    if (taillights.length < 2) taillights = [new THREE.Vector3(W * 0.36, H * 0.6, bounds.min.z + 0.1), new THREE.Vector3(-W * 0.36, H * 0.6, bounds.min.z + 0.1)];
+    let exhausts = exhaustParts.length ? sideCenters(exhaustParts) : [];
+    if (!exhausts.length) exhausts = [new THREE.Vector3(W * 0.2, H * 0.22, bounds.min.z + 0.05), new THREE.Vector3(-W * 0.2, H * 0.22, bounds.min.z + 0.05)];
+
+    return { entry, body, wheels, bounds, wheelbase, trackFront, trackRear, wheelRadius, wheelCenterY, axleMidZ, headlights, taillights, exhausts, hasHeadMat, hasTailMat, tris: Math.round(tris) };
+  }
+}

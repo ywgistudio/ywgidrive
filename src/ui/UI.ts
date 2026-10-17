@@ -749,18 +749,18 @@ export class UI {
     el.animate(
       step === 0
         ? [
-            { opacity: 0, transform: 'scale(0.6)', filter: 'blur(10px)' },
-            { opacity: 1, transform: 'scale(1.08)', filter: 'blur(0px)', offset: 0.15 },
-            { opacity: 1, transform: 'scale(1)', offset: 0.6 },
-            { opacity: 0, transform: 'scale(1.6)', filter: 'blur(6px)' },
+            { opacity: 0, transform: 'scale(0.6)', filter: 'blur(10px)', easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.3)' },
+            { opacity: 1, transform: 'scale(1.06)', filter: 'blur(0px)', offset: 0.16, easing: 'ease-out' },
+            { opacity: 1, transform: 'scale(1)', filter: 'blur(0px)', offset: 0.62, easing: 'ease-in' },
+            { opacity: 0, transform: 'scale(1.5)', filter: 'blur(6px)' },
           ]
         : [
-            { opacity: 0, transform: 'scale(1.9)', filter: 'blur(14px)' },
-            { opacity: 1, transform: 'scale(1)', filter: 'blur(0px)', offset: 0.22 },
-            { opacity: 1, transform: 'scale(0.94)', offset: 0.7 },
-            { opacity: 0, transform: 'scale(0.7)', filter: 'blur(4px)' },
+            { opacity: 0, transform: 'scale(1.9)', filter: 'blur(14px)', easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+            { opacity: 1, transform: 'scale(1)', filter: 'blur(0px)', offset: 0.24, easing: 'linear' },
+            { opacity: 1, transform: 'scale(0.95)', filter: 'blur(0px)', offset: 0.74, easing: 'ease-in' },
+            { opacity: 0, transform: 'scale(0.72)', filter: 'blur(4px)' },
           ],
-      { duration: step === 0 ? 1100 : 950, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'forwards' },
+      { duration: step === 0 ? 1100 : 950, fill: 'forwards' },
     );
   }
 
@@ -773,13 +773,13 @@ export class UI {
     while (box.children.length > 5) box.lastElementChild!.remove();
     const a = p.animate(
       [
-        { opacity: 0, transform: 'skewX(-12deg) translateX(60px)' },
-        { opacity: 1, transform: 'skewX(-12deg) translateX(-6px)', offset: 0.1 },
+        { opacity: 0, transform: 'skewX(-12deg) translateX(60px)', easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+        { opacity: 1, transform: 'skewX(-12deg) translateX(-6px)', offset: 0.1, easing: 'ease-out' },
         { opacity: 1, transform: 'skewX(-12deg) translateX(0)', offset: 0.18 },
-        { opacity: 1, transform: 'skewX(-12deg) translateX(0)', offset: 0.82 },
+        { opacity: 1, transform: 'skewX(-12deg) translateX(0)', offset: 0.82, easing: 'ease-in' },
         { opacity: 0, transform: 'skewX(-12deg) translateX(30px)' },
       ],
-      { duration: 2000, easing: 'ease-out', fill: 'forwards' },
+      { duration: 2000, fill: 'forwards' },
     );
     a.onfinish = () => p.remove();
   }
@@ -791,12 +791,12 @@ export class UI {
     el.getAnimations().forEach((a) => a.cancel());
     el.animate(
       [
-        { opacity: 0, transform: 'skewX(-12deg) scale(1.25)', letterSpacing: '0.4em' },
+        { opacity: 0, transform: 'skewX(-12deg) scale(1.25)', letterSpacing: '0.4em', easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
         { opacity: 1, transform: 'skewX(-12deg) scale(1)', letterSpacing: '0.08em', offset: Math.min(0.3, 250 / ms) },
-        { opacity: 1, transform: 'skewX(-12deg) scale(1)', offset: Math.max(0.5, 1 - 300 / ms) },
-        { opacity: 0, transform: 'skewX(-12deg) scale(0.96)' },
+        { opacity: 1, transform: 'skewX(-12deg) scale(1)', letterSpacing: '0.08em', offset: Math.max(0.5, 1 - 300 / ms), easing: 'ease-in' },
+        { opacity: 0, transform: 'skewX(-12deg) scale(0.96)', letterSpacing: '0.08em' },
       ],
-      { duration: ms, easing: 'ease-out', fill: 'forwards' },
+      { duration: ms, fill: 'forwards' },
     );
   }
 

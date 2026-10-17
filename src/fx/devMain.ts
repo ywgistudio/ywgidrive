@@ -22,6 +22,8 @@ const camera = new THREE.PerspectiveCamera(62, 1, 0.1, 2000);
 const post = new PostFX(renderer, scene, camera, q);
 const fx = new Effects(scene, q);
 fx.setRain(rainAmt);
+if (params.has('rainW')) fx.rain.uniforms.uWidth.value = parseFloat(params.get('rainW')!);
+(window as unknown as { fx: Effects }).fx = fx;
 
 // --- world
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ color: 0x2a2a2f, roughness: 0.34, metalness: 0.0 }));
@@ -83,7 +85,6 @@ let speed = 0;
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
-  renderer.setSize(w, h, false);
   post.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();

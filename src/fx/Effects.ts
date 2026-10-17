@@ -73,7 +73,7 @@ export class Effects {
       }
     };
     this.rain = new StreakField(Math.round(5000 * Math.min(1.2, pm)), {
-      box: new THREE.Vector3(36, 22, 36),
+      box: new THREE.Vector3(34, 16, 34),
       vel: new THREE.Vector3(0.8, -13, 0.4),
       exposure: 0.024,
       width: 0.013,

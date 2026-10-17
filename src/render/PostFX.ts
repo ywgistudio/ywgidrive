@@ -15,6 +15,7 @@ import {
 } from 'postprocessing';
 import type { QualityProfile } from '../core/Settings';
 import { GradeEffect, GrainEffect, RadialBlurEffect } from './effects';
+import { applyPixelRatio } from './Renderer';
 
 const damp = (cur: number, target: number, rate: number, dt: number) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
 
@@ -44,6 +45,8 @@ export class PostFX {
   private smaa: SMAAEffect | null = null;
   private passes: EffectPass[] = [];
   private exposure = 1;
+  private width = 0;
+  private height = 0;
 
   // targets (set by gameplay)
   private speedTarget = 0;
@@ -116,14 +119,20 @@ export class PostFX {
     for (const p of this.passes) this.composer.addPass(p);
   }
 
+  /** Applies pixel-ratio cap and rebuilds the chain if bloom/SMAA availability changed. */
   setQuality(q: QualityProfile) {
     const rebuild = q.bloom !== this.q.bloom || q.smaa !== this.q.smaa;
     this.q = q;
+    applyPixelRatio(this.renderer, q);
     if (rebuild) this.build();
+    if (this.width > 0) this.composer.setSize(this.width, this.height);
   }
 
+  /** CSS-pixel size of the canvas. Also resizes the renderer (do not call renderer.setSize separately). */
   setSize(w: number, h: number) {
-    this.composer.setSize(w, h);
+    this.width = w;
+    this.height = h;
+    this.composer.setSize(w, h, false);
   }
 
   setSpeed(t: number) {
@@ -161,7 +170,7 @@ export class PostFX {
     const pulse = 0.5 + 0.5 * Math.sin(this.time * 18);
 
     // radial blur
-    this.radial.strength = sp2 * sp2 * 0.045 + this.nitro * (0.06 + 0.012 * pulse) + imp * 0.05 + this.menu * 0.0;
+    this.radial.strength = sp2 * sp2 * 0.04 + this.nitro * (0.042 + 0.01 * pulse) + imp * 0.045;
     this.radial.uniforms.get('innerRadius')!.value = THREE.MathUtils.lerp(0.22, 0.12, this.nitro);
 
     // chromatic aberration (edges only)

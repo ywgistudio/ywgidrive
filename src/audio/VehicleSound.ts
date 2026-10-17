@@ -583,7 +583,7 @@ class PlayerVoice implements EngineVoice {
         this.nitroLoop = loopSource(ctx, nb);
         this.nitroLoop.connect(this.nitroLoopGain);
       }
-      setParam(this.nitroLoopGain.gain, 0.35, ctx, 0.08);
+      setParam(this.nitroLoopGain.gain, 0.28, ctx, 0.08);
     } else if (!s.boosting && this.wasBoosting) {
       this.oneShot('nitro_end', 0.45);
       setParam(this.nitroLoopGain.gain, 0, ctx, 0.08);
@@ -598,7 +598,7 @@ class PlayerVoice implements EngineVoice {
       }
     }
     this.wasBoosting = s.boosting;
-    setParam(this.hissGain.gain, s.boosting ? 0.08 + 0.06 * Lc : 0, ctx, 0.06);
+    setParam(this.hissGain.gain, s.boosting ? 0.035 + 0.03 * Lc : 0, ctx, 0.06);
   }
 
   dispose() {
