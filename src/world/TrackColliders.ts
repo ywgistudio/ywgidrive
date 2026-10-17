@@ -21,7 +21,9 @@ export function buildTrackColliders(world: RAPIER.World, track: Track) {
   };
 
   // Build a strip mesh from a list of (lat, h) cross-section points per sample, as quads between samples.
-  const strip = (profile: (i: number) => [number, number][], kind: number, friction: number) => {
+  // `slick` surfaces (curb faces, walls) use the minimum friction of the pair so cars glance off them
+  // and keep their speed instead of sticking.
+  const strip = (profile: (i: number) => [number, number][], kind: number, friction: number, slick = false) => {
     const verts: number[] = [];
     const idx: number[] = [];
     const cols = profile(0).length;
@@ -38,31 +40,29 @@ export function buildTrackColliders(world: RAPIER.World, track: Track) {
     }
     const desc = RAPIER.ColliderDesc.trimesh(new Float32Array(verts), new Uint32Array(idx), RAPIER.TriMeshFlags.FIX_INTERNAL_EDGES_TWO_SIDED)
       .setFriction(friction)
-      .setRestitution(0.05)
+      .setRestitution(slick ? 0.12 : 0.05)
       .setCollisionGroups(STATIC_GROUPS);
+    if (slick) {
+      desc.setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min);
+      desc.setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Min);
+    }
     const col = world.createCollider(desc);
     surfaceGrip.set(col.handle, { grip: kind === 0 ? 1 : 0.92, bump: kind, kind });
     return col;
   };
 
-  const road = strip(() => [[-hw, 0], [-hw * 0.5, 0], [0, 0], [hw * 0.5, 0], [hw, 0]], 0, 0.9);
-
-  // curb faces + sidewalks + walls, both sides. Profile ordered so triangles face the road side up.
-  const sideR = strip((i) => {
-    const sw = track.sidewalk[i];
-    const wallH = WALL_COLLIDER_HEIGHT + track.tunnelBlend[i] * (TUNNEL_HEIGHT - WALL_COLLIDER_HEIGHT);
-    return [[hw, 0], [hw, CURB_HEIGHT], [hw + sw, CURB_HEIGHT], [hw + sw, wallH]];
-  }, 1, 0.6);
-  const sideL = strip((i) => {
-    const sw = track.sidewalk[i];
-    const wallH = WALL_COLLIDER_HEIGHT + track.tunnelBlend[i] * (TUNNEL_HEIGHT - WALL_COLLIDER_HEIGHT);
-    return [[-hw - sw, wallH], [-hw - sw, CURB_HEIGHT], [-hw, CURB_HEIGHT], [-hw, 0]];
-  }, 1, 0.6);
-  // walls should be slippery so cars slide along them; give the wall colliders their own low friction
-  // (the side strips above include the wall; cars mostly touch it with the body collider whose friction is low)
-  void sideR;
-  void sideL;
-  void road;
+  const wallH = (i: number) => WALL_COLLIDER_HEIGHT + track.tunnelBlend[i] * (TUNNEL_HEIGHT - WALL_COLLIDER_HEIGHT);
+  // road
+  strip(() => [[-hw, 0], [-hw * 0.5, 0], [0, 0], [hw * 0.5, 0], [hw, 0]], 0, 0.9);
+  // curb faces (slick so a car body brushing the curb doesn't snag)
+  strip(() => [[hw, 0], [hw, CURB_HEIGHT]], 1, 0.02, true);
+  strip(() => [[-hw, CURB_HEIGHT], [-hw, 0]], 1, 0.02, true);
+  // sidewalk tops
+  strip((i) => [[hw, CURB_HEIGHT], [hw + track.sidewalk[i], CURB_HEIGHT]], 1, 0.5);
+  strip((i) => [[-hw - track.sidewalk[i], CURB_HEIGHT], [-hw, CURB_HEIGHT]], 1, 0.5);
+  // outer walls (slick: glancing hits slide along and keep speed)
+  strip((i) => [[hw + track.sidewalk[i], CURB_HEIGHT], [hw + track.sidewalk[i], wallH(i)]], 1, 0.02, true);
+  strip((i) => [[-hw - track.sidewalk[i], wallH(i)], [-hw - track.sidewalk[i], CURB_HEIGHT]], 1, 0.02, true);
 
   // tunnel ceiling (only where fully inside)
   const ceilVerts: number[] = [];
