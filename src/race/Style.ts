@@ -29,12 +29,13 @@ export class Style {
 
   update(dt: number, v: Vehicle, crashed: boolean, drafting: boolean) {
     this.topSpeed = Math.max(this.topSpeed, v.speedKmh);
-    const slip = Math.abs(v.bodySlip);
+    // drift scoring keys off the vehicle's deliberate-drift state; big body slip alone also counts
+    const slip = Math.max(v.drifting ? Math.abs(v.driftAngle) : 0, Math.abs(v.bodySlip) > 0.35 ? Math.abs(v.bodySlip) : 0);
     const speed = Math.abs(v.speed);
     const grounded = v.groundedWheels >= 3;
 
     // ---- drift
-    if (grounded && speed > 12 && slip > 0.22) {
+    if (grounded && speed > 12 && slip > 0.2) {
       this.driftActive = true;
       this.calm = 0;
       this.driftTime += dt;

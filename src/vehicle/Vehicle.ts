@@ -106,6 +106,9 @@ const _tmp = new THREE.Vector3();
 const _tmp2 = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const _worldUp = new THREE.Vector3(0, 1, 0);
+const _Ftire = new THREE.Vector3();
+const _gN = new THREE.Vector3();
+const _vh = new THREE.Vector3();
 
 export class Vehicle {
   readonly spec: CarSpec;
@@ -143,7 +146,19 @@ export class Vehicle {
   limiterCut = false;
   private prevHandbrake = 0;
   private shiftHold = 0; // seconds to wait before the auto box may downshift again
-  private driftIntent = 0; // seconds: player deliberately initiated a slide (ESC backs off)
+  private driftIntent = 0; // seconds: player deliberately asked for a slide (ESC backs off)
+  private powerOverTimer = 0;
+  private driftCalm = 0; // seconds the slide angle has been small while in drift mode
+  private absBetaPrev = 0;
+  private betaRate = 0; // d|beta|/dt, filtered (rad/s)
+  private steerCmdAngle = 0; // the driver's part of the road-wheel angle (no self-align), rad, + = left
+  private driftTarget = 0;
+  private escCut = 0; // engine torque trim requested by the stability control (0..1)
+  private landTimer = 0;
+  /** True while the car is in a deliberate drift (drift assist active). HUD/audio hook. */
+  drifting = false;
+  /** Signed body slip angle in radians (+ = right-hand drift: nose pointed right of the path, tail out to the left). */
+  driftAngle = 0;
 
   // telemetry
   speed = 0; // forward speed m/s
@@ -273,39 +288,19 @@ export class Vehicle {
     const speedAbs = Math.hypot(vLong, vLat);
     this.bodySlip = speedAbs > 3 ? Math.atan2(vLat, Math.abs(vLong)) : 0;
 
-    // --- Steering: speed sensitive limit derived from the grip needed to hold the front tires at peak slip.
+    // --- Steering input ramp (normalised -1..1). Digital keys ramp in; returning to centre and
+    // catching a slide the other way are quicker than turning in, like a driver letting the wheel
+    // spin back through their hands. Turn-in slows a little at very high speed for precision.
+    // The steering geometry itself (speed-sensitive band, self-aligning countersteer, Ackermann) is
+    // resolved every physics substep from the live body state.
     const target = THREE.MathUtils.clamp(inp.steer, -1, 1);
-    const rate = target === 0 || Math.sign(target) !== Math.sign(this.steerSmoothed) ? spec.steerRate * 1.8 : spec.steerRate;
-    const ds = target - this.steerSmoothed;
-    this.steerSmoothed += THREE.MathUtils.clamp(ds, -rate * dt, rate * dt);
-    const vv = Math.max(Math.abs(vLong), 1);
-    const gripSteer = Math.atan((spec.wheelbase * spec.tireLat.mu * G * 1.05) / (vv * vv)) + spec.tireLat.peakSlip * 0.85;
-    const maxSteer = Math.min(spec.maxSteer, gripSteer);
-    let angle = -this.steerSmoothed * maxSteer; // positive = left
-    // Countersteer assist: align front wheels with the direction of travel while sliding.
-    // Only kicks in past a few degrees of body slip so normal grip driving stays crisp.
-    if (this.assists.steerAssist > 0 && speedAbs > 5 && vLong > 0) {
-      const dead = 0.05;
-      const b = this.bodySlip;
-      const excess = Math.sign(b) * Math.max(0, Math.abs(b) - dead);
-      angle += excess * this.assists.steerAssist * 1.15;
-    }
-    this.steerAngle = THREE.MathUtils.clamp(angle, -spec.maxSteer, spec.maxSteer);
-    // Ackermann
-    const L = spec.wheelbase;
-    const tw = spec.trackFront;
-    const d = this.steerAngle;
-    if (Math.abs(d) > 1e-4) {
-      const Rt = L / Math.tan(Math.abs(d));
-      const inner = Math.atan(L / (Rt - tw / 2));
-      const outer = Math.atan(L / (Rt + tw / 2));
-      const sg = Math.sign(d);
-      // turning left (d>0): left wheel is inner
-      this.wheels[0].steer = sg * (d > 0 ? inner : outer);
-      this.wheels[1].steer = sg * (d > 0 ? outer : inner);
-    } else {
-      this.wheels[0].steer = this.wheels[1].steer = 0;
-    }
+    const cur = this.steerSmoothed;
+    const hiSpeed = THREE.MathUtils.smoothstep(speedAbs, 25, 75);
+    let rate = spec.steerRate * (1 - 0.45 * hiSpeed);
+    if (target === 0) rate = spec.steerRate * 2.6;
+    else if (cur !== 0 && Math.sign(target) !== Math.sign(cur)) rate = spec.steerRate * 3.2;
+    else if (Math.abs(target) < Math.abs(cur)) rate = spec.steerRate * 2.6;
+    this.steerSmoothed += THREE.MathUtils.clamp(target - cur, -rate * dt, rate * dt);
 
     // --- Gearbox
     if (this.shiftTimer > 0) {
@@ -331,7 +326,9 @@ export class Vehicle {
         // part throttle short-shifts, full throttle holds to the redline
         const upRpm = spec.redline * THREE.MathUtils.lerp(0.62, 0.985, THREE.MathUtils.smoothstep(inp.throttle, 0.35, 0.9));
         const engineRpm = Math.max(speedRpm, this.clutchSlipping ? 0 : this.rpm);
-        if (engineRpm > upRpm && speedRpm > upRpm * 0.8 && this.gear < n && inp.throttle > 0.2 && this.groundedWheels > 1) {
+        // while drifting the box holds its gear (like a sport auto) unless the engine hits the limiter
+        const upOk = this.drifting ? this.rpm > spec.limiter - 120 : engineRpm > upRpm && speedRpm > upRpm * 0.8;
+        if (upOk && this.gear < n && inp.throttle > 0.2 && this.groundedWheels > 1) {
           this.shift(this.gear + 1);
           this.shiftHold = 1.0;
         } else if (this.gear > 1 && (this.shiftHold <= 0 || inp.brake > 0.2)) {
@@ -356,9 +353,23 @@ export class Vehicle {
     if (this.clutchKick > 0) this.clutchKick = Math.max(0, this.clutchKick - dt / 0.35);
     if (this.blip > 0) this.blip = Math.max(0, this.blip - dt * 4);
 
-    // drift intent: handbrake or a big flick of steering while already sliding
-    if (inp.handbrake > 0.3 || (Math.abs(inp.steer) > 0.85 && Math.abs(this.bodySlip) > 0.12) || this.clutchKick > 0) this.driftIntent = 1.6;
-    else if (this.driftIntent > 0 && Math.abs(this.bodySlip) > 0.14 && (inp.throttle > 0.25 || Math.abs(inp.steer) > 0.3)) this.driftIntent = Math.max(this.driftIntent, 0.5);
+    // --- Drift intent: only explicit driver asks, chosen to be safe for keyboard racers (whose raw
+    // steer is always +-1) and never produced by the AI (no handbrake mid-race, steer capped at 0.84):
+    //  * handbrake pull / clutch kick: the drift button
+    //  * power-over (traction control off only): full lock + full throttle in a low gear with the rear
+    //    axle already sliding past 1.5x its peak slip. With TCS on, full lock + full throttle is just
+    //    how keyboard players exit corners, so it must not turn into a drift.
+    // A Scandinavian flick is deliberately NOT an intent: on a keyboard it is indistinguishable from a
+    // fast lane change, and switching the stability control off there would spin people at 150 km/h.
+    const sm = this.steerSmoothed;
+    const bRear = spec.wheelbase * spec.frontWeight;
+    const alphaRear = vLong > 2 ? Math.atan2(vLat - this.yawRate * bRear, vLong) : 0;
+    const fullLock = Math.abs(sm) > 0.9;
+    if (!this.assists.tcs && fullLock && inp.throttle > 0.85 && this.rearDriven && this.gear >= 1 && this.gear <= 3 && Math.abs(alphaRear) > spec.tireLat.peakSlip * 1.5) this.powerOverTimer += dt;
+    else this.powerOverTimer = 0;
+    if (inp.handbrake > 0.3 || this.clutchKick > 0) this.driftIntent = 1.6;
+    else if (this.powerOverTimer > 0.15) this.driftIntent = Math.max(this.driftIntent, 1.0);
+    else if (this.drifting && (inp.throttle > 0.2 || Math.abs(inp.steer) > 0.3)) this.driftIntent = Math.max(this.driftIntent - dt, 0.4);
     else this.driftIntent = Math.max(0, this.driftIntent - dt);
 
     // --- Nitro
@@ -407,6 +418,7 @@ export class Vehicle {
     _left.set(1, 0, 0).applyQuaternion(_q);
     _F.set(0, 0, 0);
     _T.set(0, 0, 0);
+    _Ftire.set(0, 0, 0);
 
     const inp = this.input;
     const reversing = this.gear === -1;
@@ -418,6 +430,18 @@ export class Vehicle {
       throttle = inp.throttle;
       brake = inp.brake;
     }
+
+    // ---------------- Steering geometry + slide state ----------------
+    const vLatBody = _lv.dot(_left);
+    const spdPlanar = Math.hypot(vLongBody, vLatBody);
+    const beta = spdPlanar > 3 ? Math.atan2(vLatBody, Math.max(Math.abs(vLongBody), 0.5)) : 0;
+    const absBeta = Math.abs(beta);
+    const yawNow = _av.dot(_up);
+    this.betaRate += ((absBeta - this.absBetaPrev) / dt - this.betaRate) * Math.min(1, dt * 25);
+    this.absBetaPrev = absBeta;
+    this.driftAngle = beta;
+    this.steerAngle = this.resolveSteer(vLongBody, vLatBody, yawNow, beta);
+    const slideCtl = this.drifting || this.driftIntent > 0.5;
 
     // ---------------- Suspension ----------------
     const maxLen = spec.suspLength + spec.wheelRadius;
@@ -449,6 +473,18 @@ export class Vehicle {
     }
     this.groundedWheels = grounded;
 
+    // ---------------- Drift mode (deliberate slide) ----------------
+    if (!this.drifting) {
+      if (grounded >= 3 && spdPlanar > 7 && vLongBody > 1.5 && absBeta > 0.14 && this.driftIntent > 0) {
+        this.drifting = true;
+        this.driftCalm = 0;
+      }
+    } else {
+      this.driftCalm = absBeta < 0.07 ? this.driftCalm + dt : 0;
+      if (this.driftCalm > 0.25 || spdPlanar < 5 || vLongBody < 0 || this.airTime > 0.6) this.drifting = false;
+    }
+
+    if (this.landTimer > 0) this.landTimer = Math.max(0, this.landTimer - dt);
     // anti-roll bars
     const arbF = spec.arbFront * (this.wheels[0].compression - this.wheels[1].compression);
     const arbR = spec.arbRear * (this.wheels[2].compression - this.wheels[3].compression);
@@ -461,7 +497,9 @@ export class Vehicle {
       }
       const compVel = THREE.MathUtils.clamp((w.compression - w.prevCompression) / dt, -10, 10);
       let spring = w.k * w.compression;
-      let damp = compVel > 0 ? w.cBump * compVel : w.cRebound * compVel;
+      // after a jump landing the dampers get extra rebound for a moment so the car settles instead of pogoing
+      const landBoost = 1 + 1.8 * (this.landTimer / 0.4);
+      let damp = compVel > 0 ? w.cBump * compVel : w.cRebound * landBoost * compVel;
       if (w.compression > spec.bumpStop) {
         // progressive elastomer bump stop with hysteresis: it soaks up hard landings instead of
         // handing the energy back as a trampoline bounce
@@ -524,12 +562,14 @@ export class Vehicle {
     if (this.assists.tcs && throttle > 0 && inGear) {
       let maxSlip = 0;
       for (const w of this.driven) if (w.contact) maxSlip = Math.max(maxSlip, w.slipRatio * Math.sign(gr || 1));
-      const thr = spec.tireLong.peakSlip * (this.driftIntent > 0 ? 4.5 : 1.5);
+      const allow = this.drifting ? 5 : this.driftIntent > 0 ? 4 : 1.5;
+      const thr = spec.tireLong.peakSlip * allow;
       const excess = maxSlip - thr;
       this.tcsCut = THREE.MathUtils.clamp(this.tcsCut + (excess > 0 ? dt * (6 + excess * 60) : -dt * 5), 0, 0.8);
     } else this.tcsCut = Math.max(0, this.tcsCut - dt * 5);
 
-    let thrEff = this.limiterCut ? 0 : throttle * (1 - this.tcsCut);
+    this.escCut = Math.max(0, this.escCut - dt * 3);
+    let thrEff = this.limiterCut ? 0 : throttle * (1 - Math.max(this.tcsCut, this.escCut));
     if (reversing) thrEff *= 1 - THREE.MathUtils.smoothstep(-vLongBody, 7, 10); // reverse tops out ~35 km/h
     if (shifting && this.lastShiftUp) thrEff = 0;
     this.throttleOut = thrEff;
@@ -557,8 +597,11 @@ export class Vehicle {
       const ro = (this.wheels[2].omega + this.wheels[3].omega) * 0.5;
       const centerLock = 0.25 * Math.abs(axleTorque) + 40;
       const cTransfer = THREE.MathUtils.clamp((fo - ro) * 30, -centerLock, centerLock);
-      this.applyLsd(this.wheels[0], this.wheels[1], axleTorque * spec.frontSplit - cTransfer);
-      this.applyLsd(this.wheels[2], this.wheels[3], axleTorque * (1 - spec.frontSplit) + cTransfer);
+      // the torque-vectoring centre clutch opens up while drifting: more drive to the rear
+      const split = slideCtl ? spec.frontSplit * (1 - 0.65 * Math.max(Math.min(1, absBeta / 0.35), this.drifting ? 0.6 : 0)) : spec.frontSplit;
+      const cLock = slideCtl ? 0.35 : 1;
+      this.applyLsd(this.wheels[0], this.wheels[1], axleTorque * split - cTransfer * cLock);
+      this.applyLsd(this.wheels[2], this.wheels[3], axleTorque * (1 - split) + cTransfer * cLock);
     } else if (spec.drive === 'RWD') {
       this.applyLsd(this.wheels[2], this.wheels[3], axleTorque);
     } else {
@@ -656,6 +699,7 @@ export class Vehicle {
 
       _tmp.copy(_f).multiplyScalar(Fx).addScaledVector(_s, Fy);
       _F.add(_tmp);
+      _Ftire.add(_tmp);
       // Applied at the contact patch so load transfer through the springs is physically right
       // (a tiny lift keeps roll from getting tippy on curb strikes).
       _hp.copy(w.point).addScaledVector(_up, 0.04);
@@ -692,32 +736,83 @@ export class Vehicle {
     // ---------------- Assists ----------------
     const yawRate = _av.dot(_up);
     this.yawRate = yawRate;
-    if (this.assists.esc && grounded >= 3 && spd > 8 && vLongBody > 0) {
-      // Yaw-rate stability control. Only ever fights OVERSTEER (rotation beyond what the steering
-      // asks for, capped by what the tires can physically deliver) - it never adds yaw.
-      // Backs off during a deliberate drift unless the car is genuinely spinning out.
-      const maxYaw = (spec.tireLat.mu * G * 1.05) / spd;
-      const desired = THREE.MathUtils.clamp((vLongBody * Math.tan(this.steerAngle)) / spec.wheelbase, -maxYaw, maxYaw);
-      const slip = Math.abs(this.bodySlip);
-      const spinning = slip > 0.78; // ~45 degrees
-      const deliberate = this.driftIntent > 0 && !spinning;
-      let over = 0;
-      if (Math.sign(yawRate) === Math.sign(desired) && Math.abs(desired) > 0.02) over = Math.abs(yawRate) - Math.abs(desired);
-      else over = Math.abs(yawRate); // rotating against the steering request
-      const lim = deliberate ? 99 : spinning ? 0.15 : 0.22;
-      if (over > lim) {
-        const k = Math.min(over - lim, 1.5) * spec.inertia[1] * (spinning ? 4.0 : 2.5);
-        _T.addScaledVector(_up, -Math.sign(yawRate) * k);
+    if (!this.drifting) {
+      if (this.assists.esc && grounded >= 3 && spd > 8 && vLongBody > 0) {
+        // Stability control for UNINTENDED slides (like a real ESC braking single wheels): it only ever
+        // removes yaw. Rotation beyond what the tires can sustain at this speed (or against the driver's
+        // steering) is clamped quickly, and engine torque is cut while the rear is past its peak.
+        // Stays out of the way while the driver is deliberately initiating a drift.
+        const maxYaw = (spec.tireLat.mu * G * 1.05) / spd;
+        const desired = THREE.MathUtils.clamp((vLongBody * Math.tan(this.steerCmdAngle)) / spec.wheelbase, -maxYaw, maxYaw);
+        const spinning = absBeta > 0.78; // ~45 degrees
+        const deliberate = this.driftIntent > 0 && !spinning;
+        if (!deliberate) {
+          const sameWay = Math.sign(yawRate) === Math.sign(desired) && Math.abs(desired) > 0.02;
+          const allowed = sameWay ? Math.max(Math.abs(desired), maxYaw * 0.6) * 1.08 + 0.03 : 0.06;
+          const over = Math.abs(yawRate) - allowed;
+          if (over > 0) {
+            const k = Math.min(over, 1.2) * spec.inertia[1] * (sameWay ? 10 : 7);
+            _T.addScaledVector(_up, -Math.sign(yawRate) * k);
+          }
+          // Sideslip control: the yaw-rate check alone misses a slide where the car rotates at a
+          // plausible rate but the rear keeps stepping out (lift-off / trail-brake oversteer). Push back
+          // in proportion to how far the rear axle is past its peak slip and how fast the slide grows,
+          // and trim the engine like an ESC torque request.
+          const b = spec.wheelbase * spec.frontWeight;
+          const aRs = Math.atan2(vLatBody - yawRate * b, Math.max(vLongBody, 0.5));
+          const aR = Math.abs(aRs);
+          const pk = spec.tireLat.peakSlip;
+          if (aR > pk * 1.2) {
+            const k = (Math.min(aR - pk * 1.2, 0.6) * 7 + Math.max(0, this.betaRate) * 3) * spec.inertia[1];
+            _T.addScaledVector(_up, Math.sign(aRs) * k);
+          }
+          if (aR > pk * 1.3) this.escCut = Math.min(0.7, this.escCut + dt * 8);
+        }
+      }
+    } else if (grounded >= 2) {
+      // Drift assist (scales with steerAssist; mostly off in 'pro'): the driver picks the slide angle
+      // with throttle (more power = more angle) and steering (into the turn = more, countersteer =
+      // less); a damped yaw controller holds it there and catches the spin past ~45 degrees.
+      const gain = this.driftGain();
+      if (gain > 0) {
+        const side = Math.sign(beta) || 1;
+        const thrIn = reversing ? 0 : inp.throttle;
+        // light yaw backup to the steering assist, plus a firm catch past ~50 degrees
+        let yawAcc = 4 * (this.driftTarget - absBeta) - 2.5 * this.betaRate;
+        if (absBeta > 0.87) yawAcc -= (absBeta - 0.87) * 18;
+        yawAcc = THREE.MathUtils.clamp(yawAcc, -8, 4);
+        _T.addScaledVector(_up, -side * yawAcc * spec.inertia[1] * gain);
+        // momentum: give back part of the sideways scrub so held drifts stay fast
+        if (thrIn > 0.2 && spdPlanar > 5) {
+          _vh.copy(_lv).addScaledVector(_up, -_lv.dot(_up)).normalize();
+          const along = _Ftire.dot(_vh);
+          if (along < 0) _F.addScaledVector(_vh, Math.min(spec.mass * 2.5, -along * 0.3 * gain));
+        }
       }
     }
     if (grounded === 0) {
       this.airTime += dt;
-      // mild air stabilisation: damp roll/pitch spin and level out
-      const levelAxis = _tmp.crossVectors(_up, _worldUp);
-      _T.addScaledVector(levelAxis, spec.inertia[0] * 2.0);
+      // mild air stabilisation: damp roll/pitch spin and line the car up with the ground it will land
+      // on (the road beyond the crest slopes away - levelling to the horizon made it land tail-first)
+      this.ray.origin.x = _pos.x;
+      this.ray.origin.y = _pos.y;
+      this.ray.origin.z = _pos.z;
+      this.ray.dir.x = 0;
+      this.ray.dir.y = -1;
+      this.ray.dir.z = 0;
+      const gHit = this.world.castRayAndGetNormal(this.ray, 40, true, undefined, WHEEL_RAY_GROUPS, undefined, body);
+      // far from the ground: only damp; on the final approach line up with the surface below
+      let lev = 0;
+      if (gHit && gHit.normal.y > 0.7) {
+        _gN.set(gHit.normal.x, gHit.normal.y, gHit.normal.z);
+        lev = THREE.MathUtils.clamp(1 - (gHit.timeOfImpact - 1.2) / 3, 0.25, 1);
+      } else _gN.copy(_worldUp);
+      const levelAxis = _tmp.crossVectors(_up, _gN);
+      _T.addScaledVector(levelAxis, spec.inertia[0] * 8.0 * lev);
       _tmp2.copy(_av).addScaledVector(_up, -yawRate);
-      _T.addScaledVector(_tmp2, -spec.inertia[0] * 1.2);
+      _T.addScaledVector(_tmp2, -spec.inertia[0] * 3.5);
     } else {
+      if (this.airTime > 0.25) this.landTimer = 0.4; // just touched down after a real jump
       this.airTime = 0;
     }
 
@@ -732,6 +827,95 @@ export class Vehicle {
     body.applyTorqueImpulse(imp, true);
 
     for (const w of this.wheels) w.spin += w.omega * dt;
+  }
+
+  /** Drift assist strength 0..1 from the assist settings (pro ~0.13, standard 0.7, casual 1). */
+  private driftGain(): number {
+    return THREE.MathUtils.clamp(this.assists.steerAssist, 0, 1) * (this.assists.esc ? 1 : 0.5);
+  }
+
+  /** Slide angle (rad) the driver is asking for: throttle picks it, steering in adds, countersteer removes. */
+  private computeDriftTarget(side: number): number {
+    const thrIn = this.gear === -1 ? 0 : this.input.throttle;
+    const into = this.steerSmoothed * side; // + = steering into the drift's turn
+    // lift = straighten up; half throttle ~28 deg, flat out ~42 deg, + steering in up to ~48 deg
+    const power = (0.26 + 0.48 * thrIn) * THREE.MathUtils.smoothstep(thrIn, 0.05, 0.3);
+    return THREE.MathUtils.clamp(power + 0.1 * Math.max(0, into) - 0.35 * Math.max(0, -into), 0, 0.85);
+  }
+
+  /** Speed-sensitive steering authority (rad) in grip driving: keeps the fronts near their peak slip. */
+  maxSteerAt(v: number): number {
+    const spec = this.spec;
+    const vv = Math.max(Math.abs(v), 1);
+    // geometric angle for a grip-limited turn + some front slip. At speed the body's own yaw supplies
+    // most of the front slip, so the share tapers: a held key then means "corner at the limit", not
+    // "throw the fronts past it" (which made the car plow sideways at 150+).
+    const slipShare = 0.85 - 0.45 * THREE.MathUtils.smoothstep(vv, 20, 45);
+    const gripSteer = Math.atan((spec.wheelbase * spec.tireLat.mu * G * 1.05) / (vv * vv)) + spec.tireLat.peakSlip * slipShare;
+    return Math.min(spec.maxSteer, gripSteer);
+  }
+
+  /**
+   * Road-wheel angle from the driver's (smoothed) input and the live slide state.
+   * Grip driving: input scales a speed-sensitive band. Sliding: the front wheels self-align toward
+   * the front axle's direction of travel (caster self-aligning torque — what a real car does when the
+   * driver relaxes their grip), the driver's input steers relative to that, and the band widens so a
+   * manual countersteer can go past the slide angle.
+   */
+  private resolveSteer(vLong: number, vLat: number, yawRate: number, beta: number): number {
+    const spec = this.spec;
+    const a = spec.wheelbase * (1 - spec.frontWeight);
+    const b = spec.wheelbase * spec.frontWeight;
+    const fwdMoving = vLong > 2;
+    // "Sliding" = the rear axle is past its tire's peak slip angle. (Body slip alone can't tell: hard
+    // grip cornering at speed already runs 5-8 degrees of it.)
+    const pk = spec.tireLat.peakSlip;
+    const alphaR = fwdMoving ? Math.atan2(vLat - yawRate * b, Math.max(vLong, 0.5)) : 0;
+    const slideF = fwdMoving ? THREE.MathUtils.smoothstep(Math.abs(alphaR), pk * 1.4, pk * 2.6) : 0;
+    const betaF = fwdMoving ? Math.atan2(vLat + yawRate * a, Math.max(vLong, 0.5)) : 0;
+    const alignK = slideF * (0.9 + 0.1 * THREE.MathUtils.clamp(this.assists.steerAssist, 0, 1));
+    const band = Math.min(spec.maxSteer, this.maxSteerAt(vLong) + slideF * Math.abs(betaF) * (1.15 - alignK));
+    const cmd = -this.steerSmoothed * band; // + = left
+    this.steerCmdAngle = cmd;
+    // Drift steering assist: like a drifter's hands, ease the countersteer to let the angle grow or
+    // add countersteer to pull it back, toward the angle the driver asks for with throttle/steering.
+    let assist = 0;
+    if (this.drifting) {
+      const side = Math.sign(beta) || 1;
+      const tgt = this.computeDriftTarget(side);
+      // While the rear has hooked up mid-transition (AWD especially), only follow a bigger target when
+      // the driver asks for the new side (steering into it on power) - a straightened exit on power
+      // must not be thrown back into a slide.
+      if (slideF > 0 || (this.steerSmoothed * side > 0.5 && this.input.throttle > 0.6)) this.driftTarget = tgt;
+      else this.driftTarget = Math.min(this.driftTarget, tgt);
+      if (slideF > 0) {
+        const u = THREE.MathUtils.clamp(1.3 * (this.driftTarget - Math.abs(beta)) - 0.35 * this.betaRate, -0.3, 0.35);
+        assist = -side * u * this.driftGain();
+      }
+    }
+    let d = THREE.MathUtils.clamp(alignK * betaF + cmd + assist, -spec.maxSteer, spec.maxSteer);
+    // Front slip limiter: the fronts are never asked for much more than their peak slip angle relative
+    // to where the front axle is actually going (the wheel goes light at the limit; drivers feel it).
+    // Skipped at walking pace and when deliberately drifting (the drift assist owns the steering then).
+    if (fwdMoving && vLong > 6 && !this.drifting) {
+      const lim = pk * (1.25 - 0.25 * THREE.MathUtils.smoothstep(vLong, 15, 40));
+      d = THREE.MathUtils.clamp(d, betaF - lim, betaF + lim);
+    }
+    // Ackermann
+    const L = spec.wheelbase;
+    const tw = spec.trackFront;
+    if (Math.abs(d) > 1e-4) {
+      const Rt = L / Math.tan(Math.abs(d));
+      const inner = Math.atan(L / Math.max(0.05, Rt - tw / 2));
+      const outer = Math.atan(L / (Rt + tw / 2));
+      const sg = Math.sign(d);
+      // turning left (d>0): left wheel is inner
+      this.wheels[0].steer = sg * (d > 0 ? inner : outer);
+      this.wheels[1].steer = sg * (d > 0 ? outer : inner);
+    } else {
+      this.wheels[0].steer = this.wheels[1].steer = 0;
+    }
+    return d;
   }
 
   /** Combined-slip Pacejka (normalised slip vector). Writes module scratch _fx/_fy/_rho. */

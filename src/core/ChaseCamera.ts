@@ -23,6 +23,7 @@ export class ChaseCamera {
   shakeEnabled = true;
   baseFov = 62;
   private initialized = false;
+  private driftS = 0;
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(this.baseFov, aspect, 0.1, 3000);
@@ -49,6 +50,7 @@ export class ChaseCamera {
     boosting: boolean,
     lookBack: boolean,
     airborne: boolean,
+    drift = 0, // 0..1 how hard the car is drifting
   ) {
     this.time += dt;
     const cam = this.camera;
@@ -61,7 +63,7 @@ export class ChaseCamera {
     const desiredHeading = flatFwd.clone();
     if (sp > 6 && vflat.dot(flatFwd) > 0) {
       vflat.normalize();
-      desiredHeading.lerp(vflat, 0.55).normalize();
+      desiredHeading.lerp(vflat, 0.55 + 0.25 * drift).normalize();
     }
     if (!this.initialized) this.heading.copy(desiredHeading);
     const hRate = this.mode === 'chase' || this.mode === 'far' ? 5.5 : 30;
@@ -108,7 +110,8 @@ export class ChaseCamera {
     }
 
     // FOV with speed + nitro
-    const fovTarget = this.baseFov + sNorm * 16 + (boosting ? 8 : 0);
+    this.driftS += (drift - this.driftS) * Math.min(1, dt * 4);
+    const fovTarget = this.baseFov + sNorm * 16 + (boosting ? 8 : 0) + this.driftS * 4;
     cam.fov += (fovTarget - cam.fov) * Math.min(1, dt * 3);
 
     // shake: speed rumble + impacts

@@ -648,7 +648,8 @@ export class RaceGame {
     }
 
     // camera
-    this.chase.update(dt, { position: P.renderPos, quaternion: P.renderQuat, velocity: pv.velocity }, Math.abs(pv.speed), pv.boosting, inp.state.lookBack, pv.groundedWheels === 0);
+    const driftAmt = pv.drifting ? THREE.MathUtils.clamp(Math.abs(pv.driftAngle) / 0.6, 0, 1) : 0;
+    this.chase.update(dt, { position: P.renderPos, quaternion: P.renderQuat, velocity: pv.velocity }, Math.abs(pv.speed), pv.boosting, inp.state.lookBack, pv.groundedWheels === 0, driftAmt);
     const sNorm = THREE.MathUtils.clamp(pv.speedKmh / 320, 0, 1);
     this.post.setSpeed(sNorm);
     this.post.setNitro(pv.boosting);
@@ -882,6 +883,7 @@ export class RaceGame {
       const v = c.vehicle;
       let skid = 0;
       let surface = 0;
+      if (v.drifting) skid = THREE.MathUtils.smoothstep(Math.abs(v.driftAngle), 0.12, 0.6) * 0.85;
       for (const w of v.wheels) {
         if (w.contact) skid = Math.max(skid, w.skid);
         if (w.contact && w.surfaceKind === 1) surface = 1;
