@@ -144,7 +144,7 @@ const _vertexPbr: (THREE.MeshStandardMaterial | null)[] = [null, null];
 export function vertexPbrMaterial(doubleSided = false): THREE.MeshStandardMaterial {
   const k = doubleSided ? 1 : 0;
   if (_vertexPbr[k]) return _vertexPbr[k]!;
-  const m = new THREE.MeshStandardMaterial({ name: 'vertex-pbr', vertexColors: true, roughness: 1, metalness: 1, envMapIntensity: 1.1, side: doubleSided ? THREE.DoubleSide : THREE.FrontSide });
+  const m = new THREE.MeshStandardMaterial({ name: 'vertex-pbr', vertexColors: true, roughness: 1, metalness: 1, envMapIntensity: 0.6, side: doubleSided ? THREE.DoubleSide : THREE.FrontSide });
   m.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec2 pbr;\nvarying vec2 vPbr;')
@@ -418,17 +418,17 @@ function convertMaterial(src: THREE.Material, role: MatRole): THREE.Material {
         roughness: 0.02,
         transparent: true,
         opacity: 0.62,
-        envMapIntensity: 2.2,
+        envMapIntensity: 1.3,
         specularIntensity: 1,
         ior: 1.52,
         depthWrite: false,
       });
     case 'chrome':
-      return new THREE.MeshStandardMaterial({ name: src.name, color: 0xe8e8ea, metalness: 1, roughness: 0.12, envMapIntensity: 1.6 });
+      return new THREE.MeshStandardMaterial({ name: src.name, color: 0xe8e8ea, metalness: 1, roughness: 0.12, envMapIntensity: 0.9 });
     case 'rubber':
       return new THREE.MeshStandardMaterial({ name: src.name, color: 0x0d0d0e, metalness: 0, roughness: 0.86, map, normalMap });
     case 'metal': {
-      const m = new THREE.MeshStandardMaterial({ name: src.name, color: color.lerp(new THREE.Color(0xb8bcc4), 0.4), metalness: 1, roughness: 0.28, map, normalMap, envMapIntensity: 1.4 });
+      const m = new THREE.MeshStandardMaterial({ name: src.name, color: color.lerp(new THREE.Color(0xb8bcc4), 0.4), metalness: 1, roughness: 0.28, map, normalMap, envMapIntensity: 0.8 });
       return m;
     }
     case 'interior': {
@@ -444,7 +444,7 @@ function convertMaterial(src: THREE.Material, role: MatRole): THREE.Material {
       return src;
     default: {
       const m = (src as THREE.MeshStandardMaterial).clone ? (src as THREE.MeshStandardMaterial).clone() : src;
-      if ((m as THREE.MeshStandardMaterial).isMeshStandardMaterial) (m as THREE.MeshStandardMaterial).envMapIntensity = 1.0;
+      if ((m as THREE.MeshStandardMaterial).isMeshStandardMaterial) (m as THREE.MeshStandardMaterial).envMapIntensity = 0.55;
       return m;
     }
   }

@@ -16,7 +16,7 @@ import { Sky, FOG_COLOR } from './Sky';
 
 /** env reflection strength for specific meshes (others use scene.environmentIntensity) */
 const ENV_STRENGTH: Record<string, number> = {
-  buildings: 0.1,
+  buildings: 0.06,
   roofProps: 0.1,
   terrain: 0.12,
   trees: 0.08,
@@ -183,7 +183,7 @@ export class Environment {
     this.sky = new Sky();
     this.root.add(this.sky.mesh);
     // overcast city night: neutral blue-grey sky fill, warm bounce from sodium-lit streets
-    this.hemi = new THREE.HemisphereLight(0x2c323d, 0x16110c, 0.32);
+    this.hemi = new THREE.HemisphereLight(0x2c323d, 0x16110c, 0.22);
     this.root.add(this.hemi);
     this.moon = new THREE.DirectionalLight(0xa9b3c4, 0.12);
     this.moon.position.set(-450, 420, -780);

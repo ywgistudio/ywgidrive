@@ -208,10 +208,10 @@ export class CarVisual {
       clearcoat: 1,
       clearcoatRoughness: 0.035,
       envMap,
-      envMapIntensity: 1.25,
+      envMapIntensity: 0.6,
     });
     addFlakes(this.paintMat);
-    this.paintLod = new THREE.MeshPhysicalMaterial({ name: 'carpaint-lod', color: opts.paint, metalness: 0.68, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05, envMap, envMapIntensity: 1.25, side: THREE.DoubleSide });
+    this.paintLod = new THREE.MeshPhysicalMaterial({ name: 'carpaint-lod', color: opts.paint, metalness: 0.68, roughness: 0.3, clearcoat: 1, clearcoatRoughness: 0.05, envMap, envMapIntensity: 0.6, side: THREE.DoubleSide });
     this.headMat = new THREE.MeshStandardMaterial({ name: 'headlight', color: 0xffffff, emissive: 0xfff1df, emissiveIntensity: 10, roughness: 0.15, metalness: 0 });
     this.tailMat = new THREE.MeshStandardMaterial({ name: 'taillight', color: 0x140000, emissive: 0xff0200, emissiveIntensity: 1.1, roughness: 0.25, metalness: 0 });
     this.reverseMat = new THREE.MeshStandardMaterial({ name: 'reverse', color: 0x111111, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.3 });
@@ -346,7 +346,7 @@ export class CarVisual {
 
     if (opts.player) {
       for (const p of lampPos.slice(0, 2)) {
-        const s = new THREE.SpotLight(0xfff2e2, 700, 140, 0.46, 0.65, 1.5);
+        const s = new THREE.SpotLight(0xfff2e2, 420, 140, 0.46, 0.65, 1.5);
         s.position.copy(p);
         s.position.z += 0.1;
         s.target.position.set(p.x * 1.6, p.y - 1.4, p.z + 26);
@@ -559,7 +559,7 @@ export function makeTrafficVisual(models: CarModels, entry: CarModelEntry, paint
   const pkey = `${color}:${t.paintMap?.uuid ?? ''}`;
   let pmat = trafficPaint.get(pkey);
   if (!pmat) {
-    pmat = new THREE.MeshStandardMaterial({ color, map: t.paintMap, metalness: t.paintMap ? 0.2 : 0.5, roughness: 0.32, envMapIntensity: 1.1 });
+    pmat = new THREE.MeshStandardMaterial({ color, map: t.paintMap, metalness: t.paintMap ? 0.2 : 0.5, roughness: 0.32, envMapIntensity: 0.55 });
     trafficPaint.set(pkey, pmat);
   }
   if (!trafficHead) trafficHead = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff1df, emissiveIntensity: 8, roughness: 0.2 });

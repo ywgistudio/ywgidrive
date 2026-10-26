@@ -73,7 +73,7 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
           // facade materials: concrete, limestone, brick, dark panel (picked per building)
           float matSel = fract(vSeed.y * 7.0);
           vec3 wallTint = matSel < 0.35 ? vec3(0.3, 0.295, 0.28) : (matSel < 0.55 ? vec3(0.34, 0.3, 0.24) : (matSel < 0.8 ? vec3(0.26, 0.12, 0.085) : vec3(0.11, 0.115, 0.12)));
-          wallTint *= 0.55 + 0.45 * vSeed.y;
+          wallTint *= 0.42 + 0.33 * vSeed.y;
           float office = (style < 1.5 || style > 4.5) ? 1.0 : 0.0;
           float bEmis = 0.0;
           vec3 bEmisCol = vec3(0.0);
@@ -119,6 +119,11 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
             float hw = wHash12(ci + vec2(seed * 71.0, faceId * 17.0));
             float litFrac = vStyle.z;
             float lit = step(hw, litFrac * (0.55 + hf * 0.9));
+            // offices light whole runs of a floor (one tenant / one cleaning crew), not single windows
+            float runLen = 3.0 + floor(wHash12(vec2(ci.y, seed + faceId)) * 7.0);
+            float run = floor((ci.x + floor(wHash12(vec2(ci.y * 1.3, seed)) * 5.0)) / runLen);
+            float litRun = step(wHash12(vec2(ci.y + seed * 13.0, run + faceId * 7.0)), litFrac * 1.15);
+            lit = mix(lit, litRun * step(0.06, hw), office);
             if (style > 3.5 && style < 4.5) lit *= step(0.35, hf);
             float inten = (0.25 + 0.75 * pow(wHash12(ci * 1.7 + seed), 2.0)) * (0.55 + 0.6 * wl.y);
             // ceiling light band + interior clutter silhouettes
@@ -159,12 +164,34 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
                 float shopH = wHash12(vec2(floor(fc.x / (faceW / bay)), seed + faceId));
                 float kind = wHash12(vec2(floor(fc.x / (faceW / bay)) * 3.7, seed * 2.0 + faceId));
                 vec3 shopC = kind < 0.45 ? vec3(1.0, 0.68, 0.4) : (kind < 0.8 ? vec3(0.9, 0.95, 0.95) : vec3(1.0, 0.45, 0.18));
-                // ~45% of shops are open late; closed ones keep a dim security light at the back
+                // ~45% of shops are open late; closed ones keep a dim security light or have the shutter down
                 float shopOn = step(0.55, shopH);
-                float grad = 0.55 + 0.45 * smoothstep(0.2, 3.2, fc.y);
-                bEmisCol += shopC * glass * mix(0.05, 0.75 + 0.6 * kind, shopOn) * grad;
+                float shutter = (1.0 - shopOn) * step(0.5, fract(shopH * 13.7));
+                // interior: rows of ceiling fixtures, shelving with goods (stores) or table silhouettes (bars)
+                float cellX = floor(bf * 10.0);
+                float ceilRow = smoothstep(2.85, 3.1, fc.y) * (0.6 + 0.4 * step(0.35, fract(bf * 5.0)));
+                float shelf = 0.0;
+                for (int sh = 0; sh < 3; sh++) shelf += 1.0 - smoothstep(0.03, 0.06, abs(fc.y - (0.85 + float(sh) * 0.62)));
+                float goods = 0.55 + 0.45 * wHash12(vec2(cellX, floor(fc.y * 3.2) + seed));
+                float store = step(kind, 0.8);
+                float interior = mix(0.75, goods, store * step(fc.y, 2.5)) * (1.0 - clamp(shelf, 0.0, 1.0) * 0.75 * store);
+                // bars/diners: dimmer, a counter and seated silhouettes in the lower half
+                interior *= mix(1.0, 0.55 + 0.45 * step(1.05, fc.y), 1.0 - store);
+                interior += ceilRow * 1.4;
+                // vertical mullions and a darker door bay
+                float mullion = 1.0 - smoothstep(0.0, 0.012 + fwidth(bf), abs(bf - 0.5));
+                float doorBay = step(0.8, fract(floor(fc.x / (faceW / bay)) * 0.37 + seed));
+                interior *= mix(1.0, 0.25, mullion) * mix(1.0, 0.7, doorBay);
+                float grad = 0.6 + 0.4 * smoothstep(0.2, 3.0, fc.y);
+                vec3 open = shopC * (0.38 + 0.28 * kind) * interior * grad;
+                vec3 closed = vec3(0.9, 0.85, 0.75) * 0.03 * smoothstep(1.5, 3.2, fc.y);
+                bEmisCol += glass * mix(closed, open, shopOn) * (1.0 - shutter);
                 alb = mix(vec3(0.02), vec3(0.02, 0.02, 0.025), glass);
                 bRough = mix(0.6, 0.1, glass);
+                float rib = 0.5 + 0.5 * sin(fc.y * 40.0);
+                alb = mix(alb, vec3(0.1, 0.1, 0.105) * (0.7 + 0.3 * rib), glass * shutter);
+                bRough = mix(bRough, 0.45, glass * shutter);
+                bMetal = mix(bMetal, 0.6, glass * shutter);
                 // awning / sign band
                 float band = step(3.55, fc.y) * step(fc.y, 4.4);
                 alb = mix(alb, vec3(0.03), band);
@@ -173,7 +200,13 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
                 float mid = 1.0 - smoothstep(0.28, 0.32, abs(fc.x / faceW - 0.5));
                 float glassL = mid * step(0.15, fc.y) * step(fc.y, gh - 0.4);
                 float lobbyOn = step(0.25, fract(seed * 5.3));
-                bEmisCol += vec3(1.0, 0.82, 0.6) * glassL * lobbyOn * (0.5 + 0.35 * smoothstep(gh - 1.6, gh - 0.5, fc.y));
+                // mullions every ~1.5 m, downlight pools near the ceiling, a reception desk silhouette
+                float lx = fc.x / 1.5;
+                float lm = 1.0 - smoothstep(0.0, 0.03 + fwidth(lx), abs(fract(lx) - 0.5) - 0.47);
+                float down = smoothstep(gh - 1.2, gh - 0.55, fc.y) * (0.55 + 0.45 * cos(fc.x * 4.2));
+                float desk = (1.0 - smoothstep(0.08, 0.1, abs(fc.x / faceW - 0.5))) * step(0.4, fc.y) * step(fc.y, 1.15);
+                float lobby = (0.2 + 0.35 * down) * (1.0 - lm * 0.8) * (1.0 - desk * 0.7);
+                bEmisCol += vec3(1.0, 0.82, 0.62) * glassL * lobbyOn * lobby;
                 alb = mix(wallTint * 0.8, vec3(0.015), glassL);
                 bRough = mix(0.8, 0.08, glassL);
               } else {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Track } from '../track/Track';
+import { lampColor } from '../world/LampPalette';
 
 /**
  * A handful of real PointLights that hop to the streetlights nearest the camera so cars (and other
@@ -9,9 +10,12 @@ export class LampPool {
   readonly lights: THREE.PointLight[] = [];
   private track: Track;
   private order: { i: number; d: number }[] = [];
+  /** per-lamp color matching the road's analytic lighting palette */
+  private colors: THREE.Color[];
 
   constructor(scene: THREE.Scene, track: Track, count: number) {
     this.track = track;
+    this.colors = track.lamps.map((l) => lampColor(track, l).clone());
     for (let i = 0; i < count; i++) {
       const l = new THREE.PointLight(0xffd0a0, 0, 40, 2);
       l.castShadow = false;
@@ -43,11 +47,11 @@ export class LampPool {
       l.visible = true;
       l.position.copy(lamp.pos);
       l.position.y -= 0.4;
-      l.color.copy(lamp.color);
+      l.color.copy(this.colors[e.i]);
       l.distance = lamp.range * 1.15;
       // fade the farthest pooled light so lamps don't pop when the set changes
       const fade = k === this.lights.length - 1 ? 0.5 : 1;
-      l.intensity = lamp.intensity * 4.0 * fade;
+      l.intensity = lamp.intensity * 2.2 * fade;
     }
   }
 }

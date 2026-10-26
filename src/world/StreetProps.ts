@@ -264,7 +264,7 @@ export class StreetProps {
         const sd = k % 2 === 0 ? 1 : -1;
         const lat = sd * (t.halfWidth + t.sidewalk[i] - 0.06);
         const n = f.right.clone().multiplyScalar(-sd).setY(0).normalize();
-        this.signs.push({ cell: exitCell, pos: f.pos.clone().addScaledVector(f.right, lat).addScaledVector(f.up, 2.5), normal: n, up: UP, width: 0.9, height: 0.9, color: new THREE.Color(1.3, 1.3, 1.3), flicker: 0, phase: 0 });
+        this.signs.push({ cell: exitCell, pos: f.pos.clone().addScaledVector(f.right, lat).addScaledVector(f.up, 2.5), normal: n, up: UP, width: 1.25, height: 1.25, color: new THREE.Color(2.0, 2.0, 2.0), flicker: 0, phase: 0 });
       }
     }
     if (geos.length) {

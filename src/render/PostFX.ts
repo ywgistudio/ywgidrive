@@ -99,9 +99,9 @@ export class PostFX {
       ? new BloomEffect({
           blendFunction: BlendFunction.ADD,
           mipmapBlur: true,
-          luminanceThreshold: 0.85,
+          luminanceThreshold: 1.0,
           luminanceSmoothing: 0.35,
-          intensity: 1.15,
+          intensity: 0.95,
           radius: 0.72,
           levels: 7,
         })
@@ -206,7 +206,7 @@ export class PostFX {
     this.vignette.darkness = 0.5 + sp2 * 0.15 + this.nitro * 0.12 + this.menu * 0.3 + imp * 0.2 + dk * (0.25 + 0.12 * Math.sin(this.time * 1.1));
     this.vignette.offset = 0.32 - this.menu * 0.08;
 
-    if (this.bloom) this.bloom.intensity = 1.15 + this.nitro * 0.25 + imp * 0.4;
+    if (this.bloom) this.bloom.intensity = 0.95 + this.nitro * 0.25 + imp * 0.4;
 
     this.composer.render(dt);
   }
