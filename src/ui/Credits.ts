@@ -7,18 +7,20 @@ export class Credits {
   constructor(root: HTMLElement) {
     const style = document.createElement('style');
     style.textContent = `
-      .ywgi-credits-btn{position:fixed;right:18px;bottom:14px;z-index:60;font:600 12px "Chakra Petch",sans-serif;letter-spacing:.14em;
-        color:#cfd6ff;background:rgba(10,8,24,.55);border:1px solid rgba(124,248,255,.35);padding:7px 12px;cursor:pointer;
-        transform:skewX(-10deg);backdrop-filter:blur(6px)}
-      .ywgi-credits-btn:hover{color:#fff;border-color:#ff2bd6}
-      .ywgi-credits{position:fixed;inset:6vh 6vw;z-index:70;display:none;flex-direction:column;background:rgba(8,6,20,.92);
-        border:1px solid rgba(255,43,214,.45);box-shadow:0 0 40px rgba(255,43,214,.25);color:#e8ecff;font:500 13px/1.5 "Chakra Petch",sans-serif}
-      .ywgi-credits header{display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid rgba(255,255,255,.08)}
-      .ywgi-credits h2{margin:0;font:800 20px Orbitron,sans-serif;letter-spacing:.08em}
-      .ywgi-credits button{font:600 12px "Chakra Petch";letter-spacing:.12em;color:#fff;background:#ff2bd6;border:0;padding:8px 14px;cursor:pointer}
-      .ywgi-credits .body{overflow:auto;padding:14px 18px}
-      .ywgi-credits .body p{margin:0 0 8px}
-      .ywgi-credits .body a{color:#7cf8ff}
+      .ywgi-credits-btn{position:fixed;right:18px;bottom:14px;z-index:60;font:600 11px "Barlow",sans-serif;letter-spacing:.24em;
+        color:rgba(244,242,238,.7);background:rgba(14,15,17,.55);border:1px solid rgba(255,255,255,.18);padding:7px 12px 6px;cursor:pointer;
+        backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:color .15s,border-color .15s}
+      .ywgi-credits-btn:hover{color:#fff;border-color:rgba(255,255,255,.5)}
+      .ywgi-credits{position:fixed;inset:7vh 7vw;z-index:70;display:none;flex-direction:column;background:rgba(11,12,14,.95);
+        border:1px solid rgba(255,255,255,.14);color:rgba(244,242,238,.82);font:400 14px/1.6 "Barlow",sans-serif}
+      .ywgi-credits header{display:flex;justify-content:space-between;align-items:center;padding:18px 22px;border-bottom:1px solid rgba(255,255,255,.12)}
+      .ywgi-credits h2{margin:0;font:600 28px "Barlow Condensed",sans-serif;letter-spacing:.04em;color:#f4f2ee;display:flex;align-items:center;gap:12px}
+      .ywgi-credits h2::before{content:"";width:18px;height:2px;background:#ffb400}
+      .ywgi-credits button{font:600 11px "Barlow",sans-serif;letter-spacing:.22em;color:#1a1305;background:#ffb400;border:0;padding:9px 14px 8px;cursor:pointer}
+      .ywgi-credits .body{overflow:auto;padding:16px 22px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent}
+      .ywgi-credits .body p{margin:0;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07)}
+      .ywgi-credits .body p:first-child{color:rgba(244,242,238,.6);font-size:13px}
+      .ywgi-credits .body a{color:#f4f2ee;text-decoration:none;border-bottom:1px solid #ffb400}
     `;
     document.head.appendChild(style);
     this.btn = document.createElement('button');

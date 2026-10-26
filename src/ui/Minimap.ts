@@ -91,34 +91,32 @@ export class Minimap {
     g.arc(cx, cy, R, 0, Math.PI * 2);
     g.clip();
 
-    // range rings
-    g.strokeStyle = 'rgba(255,255,255,0.05)';
+    // single faint range ring + crosshair
+    g.strokeStyle = 'rgba(255,255,255,0.06)';
     g.lineWidth = this.dpr;
-    for (const k of [0.33, 0.66]) {
-      g.beginPath();
-      g.arc(cx, cy, R * k, 0, Math.PI * 2);
-      g.stroke();
-    }
+    g.beginPath();
+    g.arc(cx, cy, R * 0.5, 0, Math.PI * 2);
+    g.moveTo(cx, cy - R);
+    g.lineTo(cx, cy + R);
+    g.stroke();
 
     if (this.path) {
       g.setTransform(a, b, c, d, e, f);
       g.lineJoin = 'round';
       g.lineCap = 'round';
-      g.strokeStyle = 'rgba(138, 92, 255, 0.28)';
-      g.lineWidth = (14 * this.dpr) / s;
+      // dark underlay keeps the line crisp over any background, then a thin white line
+      g.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+      g.lineWidth = (5 * this.dpr) / s;
       g.stroke(this.path);
-      g.strokeStyle = 'rgba(33, 230, 255, 0.35)';
-      g.lineWidth = (7 * this.dpr) / s;
-      g.stroke(this.path);
-      g.strokeStyle = 'rgba(232, 246, 255, 0.92)';
-      g.lineWidth = (2.6 * this.dpr) / s;
+      g.strokeStyle = 'rgba(244, 242, 238, 0.85)';
+      g.lineWidth = (1.8 * this.dpr) / s;
       g.stroke(this.path);
       if (this.start) {
         // start/finish line across the track
         const st = this.start;
-        const half = (9 * this.dpr) / s;
-        g.strokeStyle = '#ffffff';
-        g.lineWidth = (3 * this.dpr) / s;
+        const half = (7 * this.dpr) / s;
+        g.strokeStyle = '#ffb400';
+        g.lineWidth = (2.4 * this.dpr) / s;
         g.beginPath();
         g.moveTo(st.x - st.dz * half, st.z + st.dx * half);
         g.lineTo(st.x + st.dz * half, st.z - st.dx * half);
@@ -127,8 +125,8 @@ export class Minimap {
       g.setTransform(1, 0, 0, 1, 0, 0);
     }
 
-    // opponents (clamped to the rim when out of range)
-    const dot = 4.2 * this.dpr;
+    // opponents (clamped to the rim when out of range): small neutral grey dots
+    const dot = 3.2 * this.dpr;
     for (const car of cars) {
       if (car.player) continue;
       let sx = a * car.x + c * car.z + e;
@@ -143,12 +141,12 @@ export class Minimap {
         sy = cy + (dy / dist) * lim;
         edge = true;
       }
-      g.globalAlpha = edge ? 0.6 : 1;
-      g.fillStyle = 'rgba(0,0,0,0.65)';
+      g.globalAlpha = edge ? 0.55 : 1;
+      g.fillStyle = 'rgba(0,0,0,0.6)';
       g.beginPath();
-      g.arc(sx, sy, dot + 1.6 * this.dpr, 0, Math.PI * 2);
+      g.arc(sx, sy, dot + 1.2 * this.dpr, 0, Math.PI * 2);
       g.fill();
-      g.fillStyle = car.color;
+      g.fillStyle = '#a7a39c';
       g.beginPath();
       g.arc(sx, sy, dot, 0, Math.PI * 2);
       g.fill();
@@ -158,23 +156,28 @@ export class Minimap {
     // player arrow
     const u = this.dpr;
     g.translate(cx, cy);
-    g.shadowColor = '#21e6ff';
-    g.shadowBlur = 10 * u;
-    g.fillStyle = '#ffffff';
+    g.fillStyle = 'rgba(0,0,0,0.55)';
     g.beginPath();
-    g.moveTo(0, -9 * u);
-    g.lineTo(6.5 * u, 7 * u);
-    g.lineTo(0, 3.5 * u);
-    g.lineTo(-6.5 * u, 7 * u);
+    g.moveTo(0, -10.5 * u);
+    g.lineTo(7.8 * u, 8.2 * u);
+    g.lineTo(0, 4.4 * u);
+    g.lineTo(-7.8 * u, 8.2 * u);
     g.closePath();
     g.fill();
-    g.shadowBlur = 0;
+    g.fillStyle = '#ffb400';
+    g.beginPath();
+    g.moveTo(0, -8.5 * u);
+    g.lineTo(6 * u, 6.5 * u);
+    g.lineTo(0, 3.4 * u);
+    g.lineTo(-6 * u, 6.5 * u);
+    g.closePath();
+    g.fill();
     g.setTransform(1, 0, 0, 1, 0, 0);
 
-    // edge vignette
-    const vg = g.createRadialGradient(cx, cy, R * 0.55, cx, cy, R);
-    vg.addColorStop(0, 'rgba(6,4,16,0)');
-    vg.addColorStop(1, 'rgba(6,4,16,0.75)');
+    // soft edge fade
+    const vg = g.createRadialGradient(cx, cy, R * 0.62, cx, cy, R);
+    vg.addColorStop(0, 'rgba(14,15,17,0)');
+    vg.addColorStop(1, 'rgba(14,15,17,0.7)');
     g.fillStyle = vg;
     g.fillRect(0, 0, w, h);
     g.restore();

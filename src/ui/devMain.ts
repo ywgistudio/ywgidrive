@@ -3,6 +3,8 @@ import { UI, type HudData } from './UI';
 import { CARS } from '../vehicle/CarSpec';
 import { DEFAULT_SETTINGS } from '../core/Settings';
 import { Track } from '../track/Track';
+import { TouchControls } from './TouchControls';
+import { Input } from '../core/Input';
 
 const params = new URLSearchParams(location.search);
 const state = params.get('state') ?? 'title';
@@ -25,7 +27,7 @@ const pts: { x: number; z: number }[] = [];
 for (let i = 0; i < track.count; i++) pts.push({ x: track.px[i], z: track.pz[i] });
 ui.setMinimapTrack(pts, Math.floor(186 / track.step));
 
-const menus = () => ui.showMainMenu({ onRace: () => cars(), onSettings: () => sett(), onControls: () => ctrl() });
+const menus = () => ui.showMainMenu({ onRace: () => cars(), onDrunk: () => cars(), onSettings: () => sett(), onControls: () => ctrl() });
 const cars = () => ui.showCarSelect(CARS, { onSelect: (i) => console.log('select', i), onHover: (i) => console.log('hover', i), onBack: menus });
 const sett = () => ui.showSettings(settings, (s) => Object.assign(settings, s), menus);
 const ctrl = () => ui.showControls(menus);
@@ -53,12 +55,12 @@ switch (state) {
   case 'results':
     ui.showResults(
       [
-        { position: 1, name: 'NOX', car: 'AKUMA JZ', time: 214.532, bestLap: 70.112, player: false },
-        { position: 2, name: 'YOU', car: 'KAZE GT-R', time: 215.901, bestLap: 69.874, player: true },
-        { position: 3, name: 'VEGA', car: 'RAIDEN RX', time: 218.33, bestLap: 71.02, player: false },
-        { position: 4, name: 'KIRA', car: 'KAZE GT-R', time: 220.1, bestLap: 72.4, player: false },
-        { position: 5, name: 'DUSK', car: 'RAIDEN RX', time: 224.77, bestLap: 73.33, player: false },
-        { position: 6, name: 'ROOK', car: 'AKUMA JZ', time: null, bestLap: 74.1, player: false },
+        { position: 1, name: 'NOX', car: 'STUTTGART TURBO S', time: 274.532, bestLap: 89.112, player: false },
+        { position: 2, name: 'YOU', car: 'BAVARIA CSL', time: 275.901, bestLap: 88.874, player: true },
+        { position: 3, name: 'VIPER', car: 'BAVARIA CSL', time: 278.33, bestLap: 90.02, player: false },
+        { position: 4, name: 'KAITO', car: 'BAVARIA E30 EVO', time: 280.1, bestLap: 91.4, player: false },
+        { position: 5, name: 'JUNO', car: 'STUTTGART 930 WIDOWMAKER', time: 284.77, bestLap: 92.33, player: false },
+        { position: 6, name: 'RAZE', car: 'BAVARIA CSL', time: null, bestLap: 93.1, player: false },
       ],
       { style: 18450, topSpeed: 86.4, drift: 9120, nearMisses: 14 },
       { onRestart: noop, onMenu: menus },
@@ -66,9 +68,12 @@ switch (state) {
     break;
 }
 
+if (params.has('touch')) new TouchControls(document.getElementById('ui')!, new Input()).show(true);
+
 if (state === 'hud' || state === 'pause') {
   ui.showHud(true);
   ui.setFps(params.has('fps') ? 60 : null);
+  if (params.has('drunk')) ui.setDrunk(Number(params.get('drunk') || 0.6));
   const t0 = performance.now();
   let popped = false;
   const loop = () => {
@@ -114,9 +119,9 @@ if (state === 'hud' || state === 'pause') {
     ui.updateHud(d);
     if (!popped && t > 0.3) {
       popped = true;
-      ui.popup('NEAR MISS', '+250', '#21e6ff');
-      ui.popup('DRIFT', '+1,850', '#ff2bd6');
-      ui.popup('OVERTAKE', '+500', '#3dffa8');
+      ui.popup('NEAR MISS', '+250', '#ffe14d');
+      ui.popup('GREAT DRIFT', '+1,850  x3', '#ff3df2');
+      ui.popup('SLIPSTREAM', '+150', '#9dff6a');
       if (params.has('flash')) ui.flash('FINAL LAP', 4000, '#ffb020');
       if (params.has('count')) ui.countdown(2);
     }

@@ -96,6 +96,48 @@ function hexColor(n: number): string {
   return '#' + n.toString(16).padStart(6, '0');
 }
 
+const TONE = { accent: 'var(--accent)', good: 'var(--good)', bad: 'var(--bad)', text: 'var(--text)' };
+
+/**
+ * Callers still pass saturated colors (e.g. neon magenta for drift, cyan for best lap). Map them onto the
+ * restrained HUD palette by hue so meaning survives: reds stay alert red, greens stay "good", yellows /
+ * oranges / magentas become the amber accent, cyans / blues / whites become plain text.
+ */
+function tone(color: string | undefined, fallback: keyof typeof TONE = 'accent'): string {
+  if (!color) return TONE[fallback];
+  const m = /^#?([0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return TONE[fallback];
+  const n = parseInt(m[1], 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const sat = max === 0 ? 0 : (max - min) / max;
+  if (sat < 0.25) return TONE.text;
+  let hue = 0;
+  const d = max - min;
+  if (max === r) hue = ((g - b) / d) % 6;
+  else if (max === g) hue = (b - r) / d + 2;
+  else hue = (r - g) / d + 4;
+  hue = (hue * 60 + 360) % 360;
+  if (hue < 14 || hue >= 345) return TONE.bad;
+  if (hue < 70) return TONE.accent;
+  if (hue < 170) return TONE.good;
+  if (hue < 265) return TONE.text;
+  return TONE.accent;
+}
+
+function isTouch(): boolean {
+  return typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+}
+
+const WORDMARK = `<div class="ui-wordmark"><span class="ui-wordmark-main">YWGI<b>DRIVE</b></span><span class="ui-wordmark-sub">Midnight Circuit</span></div>`;
+
+interface BtnOpts {
+  cta?: boolean;
+  index?: number;
+  subHtml?: string;
+  tag?: string;
+}
+
 function peakPower(spec: CarSpec): { hp: number; rpm: number; torque: number } {
   const c = spec.torqueCurve;
   let best = 0;
@@ -181,6 +223,7 @@ export class UI {
   private readonly tach: Tach;
   private readonly map: Minimap;
   private driftWasActive = false;
+  private drunk: number | null = null;
   private driftBankTimer = 0;
   private lastHudTime = 0;
   private readonly startTime = performance.now();
@@ -192,8 +235,7 @@ export class UI {
     // loading screen (visible immediately)
     this.loadingEl = h('div', 'ui-layer ui-loading');
     this.loadingEl.innerHTML = `
-      <div class="ui-backdrop is-solid"><div class="ui-grid"></div><div class="ui-scanlines"></div></div>
-      <div class="ui-logo">YWGI DRIVE<span class="ui-logo-sub">Midnight Circuit</span></div>
+      ${WORDMARK}
       <div class="ui-loadbar"><div class="ui-loadbar-fill"></div></div>
       <div class="ui-loadtext">Warming up tires</div>`;
     this.loadFill = this.loadingEl.querySelector('.ui-loadbar-fill')!;
@@ -242,36 +284,40 @@ export class UI {
       this.sound('start');
       onStart();
     };
-    const m = this.openMenu('title', 'default', 'title');
+    const m = this.openMenu('title', 'default');
     m.classList.add('ui-title-screen');
     m.insertAdjacentHTML(
       'beforeend',
-      `<div class="ui-logo">YWGI DRIVE<span class="ui-logo-sub">Midnight Circuit</span></div>
-       <div class="ui-press">Press any key</div>
-       <div class="ui-title-meta">Street racing · realistic physics · live traffic</div>`,
+      `<div class="ui-title-block">${WORDMARK}<div class="ui-press"><span>${isTouch() ? 'Tap to start' : 'Press any key'}</span></div></div>
+       <div class="ui-title-meta"><span>Night street racing</span><span>Real physics · live traffic · 5 rivals</span></div>`,
     );
     m.addEventListener('pointerdown', start);
     this.state.onAny = start;
   }
 
-  showMainMenu(hnd: { onRace: () => void; onSettings: () => void; onControls: () => void }) {
-    const m = this.openMenu('main', 'default');
+  showMainMenu(hnd: { onRace: () => void; onDrunk: () => void; onSettings: () => void; onControls: () => void }) {
+    const m = this.openMenu('main', 'default', true);
     const panel = h('div', 'ui-panel');
-    panel.innerHTML = `<div class="ui-logo">YWGI DRIVE<span class="ui-logo-sub">Midnight Circuit</span></div>`;
+    panel.innerHTML = WORDMARK;
     const list = h('div', 'ui-list ui-stagger');
+    const laps = this.settings.laps;
     list.append(
-      this.button('Race', 'Midnight Circuit', () => {
+      this.button('Race', `Midnight Circuit · ${laps} lap${laps === 1 ? '' : 's'} · ${this.settings.opponents} rivals`, () => {
         this.sound('click');
         hnd.onRace();
-      }, true),
+      }, false, false, { index: 1 }),
+      this.button('Drunk mode', undefined, () => {
+        this.sound('click');
+        hnd.onDrunk();
+      }, false, false, { index: 2, tag: '2× style', subHtml: `Double vision. Delayed reflexes. <i>(Don't try this IRL.)</i>` }),
       this.button('Settings', 'Graphics · audio · driving', () => {
         this.sound('click');
         hnd.onSettings();
-      }),
-      this.button('Controls', 'Keyboard · gamepad', () => {
+      }, false, false, { index: 3 }),
+      this.button('Controls', 'Keyboard · gamepad · touch', () => {
         this.sound('click');
         hnd.onControls();
-      }),
+      }, false, false, { index: 4 }),
     );
     panel.append(list);
     m.append(panel, this.hints([['↑↓', 'Navigate'], ['Enter', 'Select']]));
@@ -279,7 +325,7 @@ export class UI {
   }
 
   showCarSelect(cars: CarSpec[], hnd: { onSelect: (i: number) => void; onHover: (i: number) => void; onBack: () => void }, initial = 0) {
-    const m = this.openMenu('cars', 'clear', 'none');
+    const m = this.openMenu('cars', 'clear');
     let idx = Math.max(0, Math.min(cars.length - 1, initial));
 
     const info = h('div', 'ui-carsel-info');
@@ -301,10 +347,12 @@ export class UI {
       ['drift', 'Drift'],
     ];
     const fills: HTMLElement[] = [];
+    const nums: HTMLElement[] = [];
     for (const [, label] of statDefs) {
       const row = h('div', 'ui-stat');
-      row.innerHTML = `<div class="ui-stat-label">${label}</div><div class="ui-stat-bar"><div class="ui-stat-fill"></div></div>`;
+      row.innerHTML = `<div class="ui-stat-label">${label}</div><div class="ui-stat-bar"><div class="ui-stat-fill"></div></div><div class="ui-stat-num">0</div>`;
       fills.push(row.querySelector('.ui-stat-fill') as HTMLElement);
+      nums.push(row.querySelector('.ui-stat-num') as HTMLElement);
       statsEl.append(row);
     }
 
@@ -321,14 +369,14 @@ export class UI {
       this.button('Select', 'Start race', () => {
         this.sound('start');
         hnd.onSelect(idx);
-      }, true),
+      }, true, false, { cta: true }),
       this.button('Back', undefined, () => this.back(), false, true),
     );
 
     const render = (dir: number) => {
       const spec = cars[idx];
       const p = peakPower(spec);
-      idxEl.innerHTML = `<span class="ui-swatch" style="color:${hexColor(spec.paint)};background:${hexColor(spec.paint)}"></span><b>${String(idx + 1).padStart(2, '0')}</b> / ${String(cars.length).padStart(2, '0')}`;
+      idxEl.innerHTML = `<span class="ui-swatch" style="background:${hexColor(spec.paint)}"></span><span><b>${String(idx + 1).padStart(2, '0')}</b> / ${String(cars.length).padStart(2, '0')}</span>`;
       nameEl.textContent = spec.name;
       tagEl.textContent = spec.tagline;
       specsEl.innerHTML = [
@@ -342,17 +390,19 @@ export class UI {
         .map(([l, v]) => `<div class="ui-spec"><div class="ui-spec-label">${l}</div><div class="ui-spec-val">${v}</div></div>`)
         .join('');
       statDefs.forEach(([k], i) => {
-        fills[i].style.transform = `scaleX(${Math.max(0.04, Math.min(1, spec.stats[k]))})`;
+        const v = Math.max(0.04, Math.min(1, spec.stats[k]));
+        fills[i].style.transform = `scaleX(${v})`;
+        nums[i].textContent = String(Math.round(v * 100));
       });
       dots.querySelectorAll('i').forEach((d, i) => d.classList.toggle('is-on', i === idx));
       if (dir !== 0) {
         for (const el of [nameEl, tagEl, specsEl]) {
           el.animate(
             [
-              { opacity: 0, transform: `${el === nameEl ? 'skewX(-12deg) ' : ''}translateX(${dir * 26}px)` },
-              { opacity: 1, transform: `${el === nameEl ? 'skewX(-12deg) ' : ''}translateX(0)` },
+              { opacity: 0, transform: `translateX(${dir * 18}px)` },
+              { opacity: 1, transform: 'translateX(0)' },
             ],
-            { duration: 320, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
+            { duration: 300, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
           );
         }
       }
@@ -383,7 +433,7 @@ export class UI {
   }
 
   showSettings(s: Settings, onChange: (s: Settings) => void, onBack: () => void) {
-    const m = this.openMenu('settings', 'default');
+    const m = this.openMenu('settings', 'default', true);
     const cur: Settings = { ...s };
     const panel = h('div', 'ui-panel is-settings');
     panel.innerHTML = `<div class="ui-kicker">Options</div><div class="ui-title">Settings</div>`;
@@ -461,7 +511,7 @@ export class UI {
   }
 
   showControls(onBack: () => void) {
-    const m = this.openMenu('controls', 'default');
+    const m = this.openMenu('controls', 'default', true);
     const panel = h('div', 'ui-panel is-wide');
     panel.innerHTML = `<div class="ui-kicker">How to drive</div><div class="ui-title">Controls</div>`;
     const grid = h('div', 'ui-binds');
@@ -483,7 +533,7 @@ export class UI {
   }
 
   showPause(hnd: { onResume: () => void; onRestart: () => void; onSettings: () => void; onQuit: () => void }) {
-    const m = this.openMenu('pause', 'default', 'none');
+    const m = this.openMenu('pause', 'default', true);
     const panel = h('div', 'ui-panel');
     panel.innerHTML = `<div class="ui-kicker">Race on hold</div><div class="ui-title">Paused</div>`;
     const list = h('div', 'ui-list ui-stagger');
@@ -491,19 +541,19 @@ export class UI {
       this.button('Resume', undefined, () => {
         this.sound('click');
         hnd.onResume();
-      }, true),
+      }, true, false, { index: 1 }),
       this.button('Restart race', undefined, () => {
         this.sound('click');
         hnd.onRestart();
-      }),
+      }, false, false, { index: 2 }),
       this.button('Settings', undefined, () => {
         this.sound('click');
         hnd.onSettings();
-      }),
+      }, false, false, { index: 3 }),
       this.button('Quit to menu', undefined, () => {
         this.sound('click');
         hnd.onQuit();
-      }),
+      }, false, false, { index: 4 }),
     );
     panel.append(list);
     m.append(panel, this.hints([['↑↓', 'Navigate'], ['Enter', 'Select'], ['Esc', 'Resume']]));
@@ -515,32 +565,42 @@ export class UI {
   }
 
   showResults(rows: ResultRow[], stats: { style: number; topSpeed: number; drift: number; nearMisses: number }, hnd: { onRestart: () => void; onMenu: () => void }) {
-    const m = this.openMenu('results', 'default', 'none');
+    const m = this.openMenu('results', 'center');
     this.state.horizontal = true;
-    const player = rows.find((r) => r.player);
+    const sorted = [...rows].sort((a, b) => a.position - b.position);
+    const player = sorted.find((r) => r.player);
+    const leader = sorted.find((r) => r.time !== null) ?? null;
+    let fastest: ResultRow | null = null;
+    for (const r of sorted) if (r.bestLap !== null && (fastest === null || r.bestLap < fastest.bestLap!)) fastest = r;
     const wrap = h('div', 'ui-results');
-    const place = player ? `${player.position}<small>${ordinal(player.position)}</small>` : '—';
     const verdict = !player ? 'Race over' : player.position === 1 ? 'Victory' : player.position <= 3 ? 'Podium finish' : 'Race complete';
+    const place = player
+      ? `<div class="ui-results-place${player.position === 1 ? ' is-first' : ''}"><span class="lbl">Finished</span><span class="big">P${player.position}<small>/${sorted.length}</small></span></div>`
+      : '';
     const kmh = this.settings.units === 'mph' ? stats.topSpeed * 2.23694 : stats.topSpeed * 3.6;
+    const gapTo = (r: ResultRow) => {
+      if (r.time === null) return 'DNF';
+      if (!leader || r === leader || leader.time === null) return 'Leader';
+      return `+${(r.time - leader.time).toFixed(3)}`;
+    };
     wrap.innerHTML = `
       <div class="ui-results-head">
-        <div><div class="ui-kicker">${esc(verdict)}</div><div class="ui-title" style="margin-bottom:0">Results</div></div>
-        <div class="ui-results-place">${place}</div>
+        <div><div class="ui-kicker">${esc(verdict)}</div><div class="ui-title">Classification</div></div>
+        ${place}
       </div>
       <table class="ui-table">
-        <thead><tr><th>Pos</th><th>Driver</th><th class="hide-sm">Car</th><th>Time</th><th class="hide-sm">Best lap</th></tr></thead>
-        <tbody>${[...rows]
-          .sort((a, b) => a.position - b.position)
+        <thead><tr><th>Pos</th><th>Driver</th><th class="hide-sm">Car</th><th class="r">Time</th><th class="r hide-sm">Gap</th><th class="r hide-sm">Best lap</th></tr></thead>
+        <tbody>${sorted
           .map(
             (r) =>
-              `<tr class="${r.player ? 'is-player' : ''} ${r.position === 1 ? 'is-first' : ''}"><td class="pos">${r.position}</td><td>${esc(r.name)}</td><td class="hide-sm">${esc(r.car)}</td><td class="num">${r.time === null ? 'DNF' : formatTime(r.time)}</td><td class="num hide-sm">${formatTime(r.bestLap)}</td></tr>`,
+              `<tr class="${r.player ? 'is-player' : ''} ${r.position === 1 ? 'is-first' : ''}"><td class="pos"><span>${r.position}</span></td><td class="drv">${esc(r.name)}</td><td class="car hide-sm">${esc(r.car)}</td><td class="num r">${r.time === null ? 'DNF' : formatTime(r.time)}</td><td class="num gap r hide-sm">${gapTo(r)}</td><td class="num r hide-sm">${formatTime(r.bestLap)}${r === fastest ? '<span class="fl">FL</span>' : ''}</td></tr>`,
           )
           .join('')}</tbody>
       </table>
       <div class="ui-results-stats">
         <div><div class="hud-label">Style</div><div class="ui-spec-val">${Math.round(stats.style).toLocaleString('en-US')}<small>PTS</small></div></div>
         <div><div class="hud-label">Top speed</div><div class="ui-spec-val">${Math.round(kmh)}<small>${this.settings.units === 'mph' ? 'MPH' : 'KM/H'}</small></div></div>
-        <div><div class="hud-label">Drift</div><div class="ui-spec-val">${Math.round(stats.drift).toLocaleString('en-US')}<small>PTS</small></div></div>
+        <div><div class="hud-label">Best drift</div><div class="ui-spec-val">${Math.round(stats.drift).toLocaleString('en-US')}<small>PTS</small></div></div>
         <div><div class="hud-label">Near misses</div><div class="ui-spec-val">${stats.nearMisses}</div></div>
       </div>`;
     const actions = h('div', 'ui-results-actions');
@@ -548,7 +608,7 @@ export class UI {
       this.button('Race again', undefined, () => {
         this.sound('start');
         hnd.onRestart();
-      }, true),
+      }, true, false, { cta: true }),
       this.button('Main menu', undefined, () => {
         this.sound('click');
         hnd.onMenu();
@@ -701,6 +761,7 @@ export class UI {
     this.text('posSfx', ordinal(d.position));
     this.text('posTotal', `/${d.total}`);
     this.cls('posNum', 'is-first', d.position === 1);
+    this.cls('pos', 'is-first', d.position === 1);
     this.html('lap', `${Math.min(d.lap, d.laps)}<small>/${d.laps}</small>`);
     this.gap('gapAhead', d.gapAhead, '+');
     this.gap('gapBehind', d.gapBehind, '−');
@@ -743,61 +804,76 @@ export class UI {
   countdown(step: 3 | 2 | 1 | 0) {
     const el = this.el.count;
     const span = el.firstElementChild as HTMLElement;
-    span.textContent = step === 0 ? 'GO!' : String(step);
+    span.textContent = step === 0 ? 'GO' : String(step);
     el.classList.toggle('is-go', step === 0);
     el.getAnimations().forEach((a) => a.cancel());
     el.animate(
       step === 0
         ? [
-            { opacity: 0, transform: 'scale(0.6)', filter: 'blur(10px)', easing: 'cubic-bezier(0.2, 0.9, 0.3, 1.3)' },
-            { opacity: 1, transform: 'scale(1.06)', filter: 'blur(0px)', offset: 0.16, easing: 'ease-out' },
-            { opacity: 1, transform: 'scale(1)', filter: 'blur(0px)', offset: 0.62, easing: 'ease-in' },
-            { opacity: 0, transform: 'scale(1.5)', filter: 'blur(6px)' },
+            { opacity: 0, transform: 'translateY(18px)', easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+            { opacity: 1, transform: 'translateY(0)', offset: 0.14 },
+            { opacity: 1, transform: 'translateY(0)', offset: 0.66, easing: 'ease-in' },
+            { opacity: 0, transform: 'translateY(-10px)' },
           ]
         : [
-            { opacity: 0, transform: 'scale(1.9)', filter: 'blur(14px)', easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
-            { opacity: 1, transform: 'scale(1)', filter: 'blur(0px)', offset: 0.24, easing: 'linear' },
-            { opacity: 1, transform: 'scale(0.95)', filter: 'blur(0px)', offset: 0.74, easing: 'ease-in' },
-            { opacity: 0, transform: 'scale(0.72)', filter: 'blur(4px)' },
+            { opacity: 0, transform: 'translateY(22px)', easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+            { opacity: 1, transform: 'translateY(0)', offset: 0.2 },
+            { opacity: 1, transform: 'translateY(0)', offset: 0.72, easing: 'ease-in' },
+            { opacity: 0, transform: 'translateY(-14px)' },
           ],
       { duration: step === 0 ? 1100 : 950, fill: 'forwards' },
     );
   }
 
-  popup(title: string, sub?: string, color = '#ff2bd6') {
+  popup(title: string, sub?: string, color?: string) {
     const box = this.el.popups;
     const p = h('div', 'hud-popup');
-    p.style.setProperty('--c', color);
+    p.style.setProperty('--c', tone(color, 'accent'));
+    if (this.drunk !== null) p.style.setProperty('--rot', `${((Math.random() * 2 - 1) * (1.5 + 3 * this.drunk)).toFixed(2)}deg`);
     p.innerHTML = `<b>${esc(title)}</b>${sub ? `<span>${esc(sub)}</span>` : ''}`;
     box.prepend(p);
     while (box.children.length > 5) box.lastElementChild!.remove();
+    const jx = this.drunk !== null ? (Math.random() * 2 - 1) * 10 * this.drunk : 0;
     const a = p.animate(
       [
-        { opacity: 0, transform: 'skewX(-12deg) translateX(60px)', easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
-        { opacity: 1, transform: 'skewX(-12deg) translateX(-6px)', offset: 0.1, easing: 'ease-out' },
-        { opacity: 1, transform: 'skewX(-12deg) translateX(0)', offset: 0.18 },
-        { opacity: 1, transform: 'skewX(-12deg) translateX(0)', offset: 0.82, easing: 'ease-in' },
-        { opacity: 0, transform: 'skewX(-12deg) translateX(30px)' },
+        { opacity: 0, transform: `translateX(24px)`, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+        { opacity: 1, transform: `translateX(${jx}px)`, offset: 0.12 },
+        { opacity: 1, transform: `translateX(${jx}px)`, offset: 0.84, easing: 'ease-in' },
+        { opacity: 0, transform: `translateX(${jx + 12}px)` },
       ],
       { duration: 2000, fill: 'forwards' },
     );
     a.onfinish = () => p.remove();
   }
 
-  flash(text: string, ms = 1600, color = '#f2f4ff') {
+  flash(text: string, ms = 1600, color?: string) {
     const el = this.el.flash;
     el.textContent = text;
-    el.style.color = color;
+    el.style.color = tone(color, 'text');
     el.getAnimations().forEach((a) => a.cancel());
     el.animate(
       [
-        { opacity: 0, transform: 'skewX(-12deg) scale(1.25)', letterSpacing: '0.4em', easing: 'cubic-bezier(0.16, 1, 0.3, 1)' },
-        { opacity: 1, transform: 'skewX(-12deg) scale(1)', letterSpacing: '0.08em', offset: Math.min(0.3, 250 / ms) },
-        { opacity: 1, transform: 'skewX(-12deg) scale(1)', letterSpacing: '0.08em', offset: Math.max(0.5, 1 - 300 / ms), easing: 'ease-in' },
-        { opacity: 0, transform: 'skewX(-12deg) scale(0.96)', letterSpacing: '0.08em' },
+        { opacity: 0, transform: 'translateY(10px)', easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' },
+        { opacity: 1, transform: 'translateY(0)', offset: Math.min(0.3, 220 / ms) },
+        { opacity: 1, transform: 'translateY(0)', offset: Math.max(0.5, 1 - 280 / ms), easing: 'ease-in' },
+        { opacity: 0, transform: 'translateY(-6px)' },
       ],
       { duration: ms, fill: 'forwards' },
     );
+  }
+
+  /** Drunk mode HUD: `level` 0..1 shows a wobbling BAC readout (~0.08–0.20%); null hides it. */
+  setDrunk(level: number | null) {
+    const on = level !== null && isFinite(level);
+    this.drunk = on ? Math.max(0, Math.min(1, level!)) : null;
+    this.hudEl.classList.toggle('is-drunk', on);
+    this.cls('bac', 'is-on', on);
+    if (on) {
+      const bac = 0.08 + 0.12 * this.drunk!;
+      this.text('bacVal', `${bac.toFixed(2)}%`);
+      // more drunk = faster, bigger wobble
+      this.el.bac.style.animationDuration = `${(3.2 - 1.6 * this.drunk!).toFixed(2)}s`;
+    }
   }
 
   setFps(fps: number | null) {
@@ -820,11 +896,11 @@ export class UI {
     }
   }
 
-  private openMenu(name: ScreenName, backdrop: 'default' | 'clear' | 'solid', streaks: 'right' | 'title' | 'none' = 'right'): HTMLElement {
+  private openMenu(name: ScreenName, backdrop: 'default' | 'clear' | 'solid' | 'center', rail = false): HTMLElement {
     this.closeMenu();
     const m = h('div', 'ui-layer ui-menu');
-    const bd = h('div', `ui-backdrop streaks-${streaks}${backdrop === 'clear' ? ' is-clear' : backdrop === 'solid' ? ' is-solid' : ''}`);
-    bd.innerHTML = `<div class="ui-grid"></div><div class="ui-streaks"><i></i><i></i><i></i><i></i><i></i><i></i></div><div class="ui-scanlines"></div>`;
+    const cls = backdrop === 'clear' ? ' is-clear' : backdrop === 'solid' ? ' is-solid' : backdrop === 'center' ? ' is-center' : '';
+    const bd = h('div', `ui-backdrop${cls}${rail ? ' has-rail' : ''}`);
     m.append(bd);
     this.root.insertBefore(m, this.loadingEl);
     this.menuEl = m;
@@ -847,10 +923,14 @@ export class UI {
     return el;
   }
 
-  private button(label: string, sub: string | undefined, onClick: () => void, primary = false, small = false): HTMLElement {
-    const el = h('button', `ui-btn${primary ? ' is-primary' : ''}${small ? ' is-small' : ''}`);
+  private button(label: string, sub: string | undefined, onClick: () => void, primary = false, small = false, opts: BtnOpts = {}): HTMLElement {
+    const el = h('button', `ui-btn${primary ? ' is-primary' : ''}${small ? ' is-small' : ''}${opts.cta ? ' is-cta' : ''}`);
     el.type = 'button';
-    el.innerHTML = `<span>${esc(label)}</span>${sub ? `<span class="ui-btn-sub">${esc(sub)}</span>` : ''}`;
+    const subHtml = opts.subHtml ?? (sub ? esc(sub) : '');
+    el.innerHTML =
+      (opts.index !== undefined ? `<span class="ui-btn-idx">${String(opts.index).padStart(2, '0')}</span>` : '') +
+      `<span class="ui-btn-main"><span class="ui-btn-label">${esc(label)}${opts.tag ? `<span class="ui-btn-tag">${esc(opts.tag)}</span>` : ''}</span>${subHtml ? `<span class="ui-btn-sub">${subHtml}</span>` : ''}</span>` +
+      `<span class="ui-btn-chev">›</span>`;
     this.addItem(el, { activate: onClick }, true);
     return el;
   }
@@ -919,12 +999,15 @@ export class UI {
     const hud = h('div', 'ui-layer ui-hud');
     hud.innerHTML = `
       <div class="hud-tl">
-        <div class="hud-pos"><span class="hud-pos-num" data-k="posNum">1</span><span class="hud-pos-sfx" data-k="posSfx">st</span><span class="hud-pos-total" data-k="posTotal">/6</span></div>
+        <div class="hud-posbox">
+          <div class="hud-pos" data-k="pos"><span class="hud-pos-p">P</span><span class="hud-pos-num" data-k="posNum">1</span><span class="hud-pos-sfx" data-k="posSfx">st</span><span class="hud-pos-total" data-k="posTotal">/6</span></div>
+        </div>
         <div class="hud-lap hud-glass"><span class="hud-label">Lap</span><span class="hud-lap-val" data-k="lap">1<small>/3</small></span></div>
         <div class="hud-gaps">
           <div class="hud-gap is-ahead" data-k="gapAhead"><span>Ahead</span><b data-k="gapAheadVal">+0.00s</b></div>
           <div class="hud-gap is-behind" data-k="gapBehind"><span>Behind</span><b data-k="gapBehindVal">−0.00s</b></div>
         </div>
+        <div class="hud-bac" data-k="bac"><span class="hud-label">BAC</span><b data-k="bacVal">0.08%</b></div>
       </div>
       <div class="hud-style"><span class="hud-label">Style</span><b data-k="style">0</b></div>
       <div class="hud-drift" data-k="drift">
@@ -948,7 +1031,6 @@ export class UI {
       </div>
       <div class="hud-bl">
         <div class="hud-map"><canvas data-k="mapCanvas"></canvas></div>
-        <div class="hud-map-ring"></div>
       </div>
       <div class="hud-br">
         <div class="hud-tach">
@@ -957,7 +1039,7 @@ export class UI {
           <div class="hud-gear" data-k="gear">N</div>
         </div>
         <div class="hud-nitro hud-glass" data-k="nitro">
-          <span class="hud-nitro-label">N₂O</span>
+          <span class="hud-nitro-label">BOOST</span>
           <div class="hud-nitro-track"><div class="hud-nitro-fill" data-k="nitroFill"></div></div>
         </div>
       </div>`;
