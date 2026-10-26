@@ -48,13 +48,15 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
         flat varying vec4 vStyle;
         flat varying vec4 vSeed;
         ${GLSL_NOISE}
-        vec3 winPalette(float h, float hue) {
-          vec3 warm = vec3(1.0, 0.42, 0.13);
-          vec3 warm2 = vec3(1.0, 0.62, 0.3);
-          vec3 cool = vec3(0.5, 0.66, 1.0);
-          vec3 fluo = vec3(0.7, 0.95, 0.8);
-          vec3 c = h < 0.4 ? warm : (h < 0.65 ? warm2 : (h < 0.85 ? fluo : cool));
-          return mix(c, cool, hue * 0.6);
+        // real interior light sources: tungsten, warm LED, office fluorescent (slightly green), cool LED
+        vec3 winPalette(float h, float office) {
+          vec3 tung = vec3(1.0, 0.52, 0.22);
+          vec3 warmLed = vec3(1.0, 0.72, 0.45);
+          vec3 fluo = vec3(0.8, 0.92, 0.82);
+          vec3 coolLed = vec3(0.78, 0.86, 1.0);
+          vec3 home = h < 0.55 ? tung : (h < 0.9 ? warmLed : coolLed);
+          vec3 work = h < 0.55 ? fluo : (h < 0.85 ? coolLed : warmLed);
+          return mix(home, work, office);
         }
         float rect(vec2 f, vec2 lo, vec2 hi, vec2 aa) {
           vec2 a = smoothstep(lo - aa, lo + aa, f) * (1.0 - smoothstep(hi - aa, hi + aa, f));
@@ -68,8 +70,11 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
           vec3 bn = normalize(vBN);
           float style = vStyle.x;
           float seed = vSeed.x;
-          vec3 wallTint = mix(vec3(0.16, 0.155, 0.15), vec3(0.2, 0.12, 0.09), step(0.5, fract(vSeed.y * 7.0)));
-          wallTint *= 0.35 + 0.65 * vSeed.y;
+          // facade materials: concrete, limestone, brick, dark panel (picked per building)
+          float matSel = fract(vSeed.y * 7.0);
+          vec3 wallTint = matSel < 0.35 ? vec3(0.3, 0.295, 0.28) : (matSel < 0.55 ? vec3(0.34, 0.3, 0.24) : (matSel < 0.8 ? vec3(0.26, 0.12, 0.085) : vec3(0.11, 0.115, 0.12)));
+          wallTint *= 0.55 + 0.45 * vSeed.y;
+          float office = (style < 1.5 || style > 4.5) ? 1.0 : 0.0;
           float bEmis = 0.0;
           vec3 bEmisCol = vec3(0.0);
           float bRough = 0.88;
@@ -115,7 +120,7 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
             float litFrac = vStyle.z;
             float lit = step(hw, litFrac * (0.55 + hf * 0.9));
             if (style > 3.5 && style < 4.5) lit *= step(0.35, hf);
-            float inten = (0.35 + 1.1 * pow(wHash12(ci * 1.7 + seed), 2.0)) * (0.55 + 0.6 * wl.y);
+            float inten = (0.25 + 0.75 * pow(wHash12(ci * 1.7 + seed), 2.0)) * (0.55 + 0.6 * wl.y);
             // ceiling light band + interior clutter silhouettes
             inten *= 1.0 + 0.6 * smoothstep(0.78, 0.9, wl.y) * (1.0 - lod);
             float clutter = step(wl.y, 0.18 + 0.32 * wHash12(vec2(floor(wl.x * 3.0 + 0.5 * wHash12(ci)), ci.y + ci.x * 7.0 + seed))) * step(0.45, wHash12(ci + seed * 9.0));
@@ -123,13 +128,13 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
             // blinds: horizontal slats on some windows
             float blinds = step(0.8, wHash12(ci * 2.3 + seed * 5.0));
             inten *= mix(1.0, 0.55 + 0.45 * step(0.5, fract(cf.y * 9.0)), blinds * (1.0 - lod));
-            vec3 wc = winPalette(wHash12(ci + seed * 3.0 + 0.5), vStyle.y);
-            // TVs / flicker
-            float tv = step(0.985, wHash12(ci * 3.1 + seed));
-            if (tv > 0.5) { wc = vec3(0.45, 0.6, 1.0); inten *= 0.6 + 0.4 * sin(uTime * 7.0 + hw * 40.0) * sin(uTime * 2.3 + hw * 9.0); lit = 1.0; }
+            vec3 wc = winPalette(wHash12(ci + seed * 3.0 + 0.5), office * (0.6 + 0.4 * vStyle.y));
+            // TVs in homes: dim, cool, flickering
+            float tv = (1.0 - office) * step(0.988, wHash12(ci * 3.1 + seed));
+            if (tv > 0.5) { wc = vec3(0.55, 0.65, 0.95); inten *= 0.35 + 0.2 * sin(uTime * 7.0 + hw * 40.0) * sin(uTime * 2.3 + hw * 9.0); lit = 1.0; }
             // distance fallback: average glow so far towers don't shimmer
             float avgLit = litFrac * 0.75;
-            vec3 avgCol = winPalette(0.5, vStyle.y);
+            vec3 avgCol = winPalette(0.45, office);
             vec3 glow = mix(wc * inten * lit, avgCol * 0.3 * avgLit, far);
             float winMask = win * aboveGround * (1.0 - mull);
             // dim curtains glow in some unlit windows
@@ -144,7 +149,7 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
               alb = mix(wallTint, vec3(0.012, 0.014, 0.02), winMask);
               bRough = mix(0.9, 0.08, winMask);
             }
-            bEmisCol += glow * winMask * 0.75;
+            bEmisCol += glow * winMask * 0.55;
             // ground floor shopfront
             if (fc.y < gh) {
               if (vStyle.w > 0.5) {
@@ -152,15 +157,25 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
                 float bf = fract(fc.x / (faceW / bay));
                 float glass = rect(vec2(bf, fc.y), vec2(0.06, 0.25), vec2(0.94, 3.4), vec2(fwidth(bf), fwidth(fc.y)) * 1.2);
                 float shopH = wHash12(vec2(floor(fc.x / (faceW / bay)), seed + faceId));
-                vec3 shopC = shopH < 0.5 ? vec3(1.0, 0.85, 0.65) : (shopH < 0.75 ? vec3(0.85, 0.95, 1.0) : (shopH < 0.9 ? vec3(1.0, 0.5, 0.75) : vec3(0.5, 1.0, 0.85)));
-                float shopOn = step(0.18, shopH);
-                float grad = 0.6 + 0.4 * smoothstep(0.2, 3.2, fc.y);
-                bEmisCol += shopC * glass * shopOn * (0.7 + 1.1 * shopH) * grad;
+                float kind = wHash12(vec2(floor(fc.x / (faceW / bay)) * 3.7, seed * 2.0 + faceId));
+                vec3 shopC = kind < 0.45 ? vec3(1.0, 0.68, 0.4) : (kind < 0.8 ? vec3(0.9, 0.95, 0.95) : vec3(1.0, 0.45, 0.18));
+                // ~45% of shops are open late; closed ones keep a dim security light at the back
+                float shopOn = step(0.55, shopH);
+                float grad = 0.55 + 0.45 * smoothstep(0.2, 3.2, fc.y);
+                bEmisCol += shopC * glass * mix(0.05, 0.75 + 0.6 * kind, shopOn) * grad;
                 alb = mix(vec3(0.02), vec3(0.02, 0.02, 0.025), glass);
                 bRough = mix(0.6, 0.1, glass);
                 // awning / sign band
                 float band = step(3.55, fc.y) * step(fc.y, 4.4);
                 alb = mix(alb, vec3(0.03), band);
+              } else if (office > 0.5 && style < 1.5) {
+                // lit lobby: tall glass across the middle of the face, warm-white downlights
+                float mid = 1.0 - smoothstep(0.28, 0.32, abs(fc.x / faceW - 0.5));
+                float glassL = mid * step(0.15, fc.y) * step(fc.y, gh - 0.4);
+                float lobbyOn = step(0.25, fract(seed * 5.3));
+                bEmisCol += vec3(1.0, 0.82, 0.6) * glassL * lobbyOn * (0.5 + 0.35 * smoothstep(gh - 1.6, gh - 0.5, fc.y));
+                alb = mix(wallTint * 0.8, vec3(0.015), glassL);
+                bRough = mix(0.8, 0.08, glassL);
               } else {
                 // roller shutters
                 float rib = 0.5 + 0.5 * sin(fc.y * 40.0);
@@ -199,9 +214,12 @@ export function createBuildingMaterial(lamps: LampLighting): THREE.MeshStandardM
             if (style < 0.5) alb *= 1.0 - slab * 0.35;
             // crown lights on landmark towers
             if (vSeed.z >= 0.0) {
-              float crown = smoothstep(vBS.y - 3.0, vBS.y - 2.5, fc.y) * (1.0 - smoothstep(vBS.y - 0.9, vBS.y - 0.5, fc.y));
-              vec3 cc = 0.5 + 0.5 * cos(6.2831 * (vSeed.z + vec3(0.0, 0.33, 0.67)));
-              bEmisCol += cc * crown * 6.0 * (0.85 + 0.15 * sin(uTime * 1.3 + seed * 10.0));
+              // uplight wash on the top floors, strongest at the fixtures and fading upward
+              float wash = smoothstep(vBS.y - 9.0, vBS.y - 8.0, fc.y) * (1.0 - smoothstep(vBS.y - 0.6, vBS.y - 0.2, fc.y));
+              float fall = exp(-(fc.y - (vBS.y - 9.0)) * 0.22);
+              float bays = 0.65 + 0.35 * cos(fc.x * 1.3);
+              vec3 cc = vSeed.z < 0.6 ? vec3(1.0, 0.86, 0.68) : vec3(0.86, 0.92, 1.0);
+              bEmisCol += cc * wash * fall * bays * 1.1 * (1.0 - winMask);
             }
             // rooftop edge
             alb *= 1.0 - smoothstep(vBS.y - 0.6, vBS.y - 0.5, fc.y) * 0.6;

@@ -79,7 +79,7 @@ export class City {
       const n = this.grid.nearest(px, pz, 400);
       return {
         pos: new THREE.Vector3(px, y.y + 22.3, pz),
-        color: new THREE.Color(1.0, 0.62, 0.3),
+        color: new THREE.Color(1.0, 0.5, 0.17),
         intensity: 900,
         range: 52,
         s: n.index >= 0 ? n.index * this.track.step : 0,
@@ -179,7 +179,7 @@ export class City {
     const core = Math.exp(-(((x + 60) / 420) ** 2 + ((z - 160) / 380) ** 2));
     let h: number;
     let style: number;
-    let lit = r.range(0.16, 0.5);
+    let lit = r.range(0.07, 0.28);
     switch (zone) {
       case 'downtown':
         h = r.range(18, 55) + core * r.range(20, 140) * (r.chance(0.35) ? 1.6 : 1);
@@ -192,12 +192,12 @@ export class City {
       case 'docks':
         h = r.range(9, 16);
         style = 3;
-        lit = r.range(0.1, 0.35);
+        lit = r.range(0.05, 0.2);
         break;
       case 'hills':
         h = r.range(6, 11);
         style = r.chance(0.7) ? 4 : 2;
-        lit = r.range(0.3, 0.6);
+        lit = r.range(0.18, 0.42);
         break;
       case 'park':
         h = r.range(10, 32);
@@ -248,7 +248,7 @@ export class City {
               hue: r.next(),
               lit: des.lit,
               shop,
-              crown: des.h > 90 && r.chance(0.6) ? r.next() : -1,
+              crown: des.h > 90 && r.chance(0.35) ? r.next() : -1,
               floorH: des.style === 3 ? 6 : des.style === 4 ? 3.0 : r.range(3.1, 3.8),
             });
             this.mark(x, z, d, w, yaw, 1.5);
@@ -334,7 +334,7 @@ export class City {
           hue: r.next(),
           lit: des.lit,
           shop: zone === 'downtown' && near.dist < 120 ? 1 : 0,
-          crown: des.h > 100 && r.chance(0.5) ? r.next() : -1,
+          crown: des.h > 100 && r.chance(0.3) ? r.next() : -1,
           floorH: des.style === 3 ? 6 : des.style === 4 ? 3.0 : r.range(3.1, 3.8),
         });
         this.mark(px, pz, w, d, yaw, 2);
@@ -364,9 +364,9 @@ export class City {
         yaw: r.next() * Math.PI,
         style: 5,
         hue: r.next(),
-        lit: r.range(0.35, 0.7),
+        lit: r.range(0.14, 0.32),
         shop: 0,
-        crown: h > 200 && r.chance(0.4) ? r.next() : -1,
+        crown: h > 200 && r.chance(0.25) ? r.next() : -1,
         floorH: 3.5,
         sample: -1,
       });

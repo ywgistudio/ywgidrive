@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Track, Lamp } from '../track/Track';
 import type { Patch } from './ShaderPatch';
+import { lampColor } from './LampPalette';
 
 /** Number of lamp slots evaluated per fragment. */
 export const LAMP_SLOTS = 8;
@@ -37,9 +38,12 @@ export class LampLighting {
     const rows = Math.ceil(n / POS_W);
     const pos = new Float32Array(POS_W * rows * 4);
     const col = new Float32Array(POS_W * rows * 4);
+    const circuit = new Set(track.lamps);
     lamps.forEach((l, i) => {
       pos.set([l.pos.x, l.pos.y, l.pos.z, l.range], i * 4);
-      col.set([l.color.r * l.intensity, l.color.g * l.intensity, l.color.b * l.intensity, l.tunnel ? 1 : 0], i * 4);
+      // circuit streetlights get real-fixture colors (LED downtown, sodium elsewhere); extra lamps keep theirs
+      const c = circuit.has(l) ? lampColor(track, l) : l.color;
+      col.set([c.r * l.intensity, c.g * l.intensity, c.b * l.intensity, l.tunnel ? 1 : 0], i * 4);
     });
     this.posTex = makeTex(pos, POS_W, rows);
     this.colTex = makeTex(col, POS_W, rows);

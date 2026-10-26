@@ -9,7 +9,7 @@ import { LampLighting } from './LampLighting';
 import { TrackMesh, type SurfaceKind } from './TrackMesh';
 import { createTrackMaterials, worldUniforms, type TrackTextures } from './TrackMaterials';
 import { City } from './City';
-import { NeonAtlas, placeSigns, buildSignMesh } from './Neon';
+import { SignAtlas, placeSigns, buildSignMesh } from './Signage';
 import { StreetProps } from './StreetProps';
 import { buildWater } from './Water';
 import { Sky, FOG_COLOR } from './Sky';
@@ -29,7 +29,7 @@ const yieldFrame = () => new Promise<void>((r) => setTimeout(r, 0));
 
 /**
  * All static visuals of "Midnight Circuit": road surfaces (matching physics), analytic streetlight
- * lighting, procedural night city, neon signage, props, harbor water and the sky.
+ * lighting, procedural night city, real-world signage, props, harbor water and the sky.
  */
 export class Environment {
   envMap: THREE.Texture | null = null;
@@ -88,7 +88,7 @@ export class Environment {
           );
         }),
     );
-    const hdrPromise = new HDRLoader().loadAsync(`${base}assets/env/night_1k.hdr`).then((hdr) => {
+    const hdrPromise = new HDRLoader().loadAsync(`${base}assets/env/city_night_1k.hdr`).then((hdr) => {
       done++;
       progress((done / total) * 0.45);
       return hdr;
@@ -101,8 +101,8 @@ export class Environment {
     hdr.dispose();
     pmrem.dispose();
     this.scene.environment = this.envMap;
-    this.scene.environmentIntensity = 0.32;
-    this.scene.environmentRotation.set(0, 1.1, 0);
+    this.scene.environmentIntensity = 0.3;
+    this.scene.environmentRotation.set(0, 2.4, 0);
     this.scene.background = null;
     this.scene.fog = new THREE.FogExp2(FOG_COLOR.getHex(), 1.0 / Math.max(600, this.quality.drawDistance * 0.62));
     await yieldFrame();
@@ -167,23 +167,25 @@ export class Environment {
     progress(0.84);
     await yieldFrame();
 
-    const atlas = new NeonAtlas();
+    const atlas = new SignAtlas();
     this.textures.push(atlas.texture);
-    const signs = placeSigns(atlas, this.city.facades);
-    this.root.add(buildSignMesh(atlas, signs));
+    this.props = new StreetProps(t, tm, this.lamps, this.city, this.terrain, this.grid, this.zebras, this.quality, atlas);
+    this.root.add(this.props.group);
+    this.props.setStartLights(-2);
     progress(0.9);
     await yieldFrame();
 
-    this.props = new StreetProps(t, tm, this.lamps, this.city, this.terrain, this.grid, this.zebras, this.quality);
-    this.root.add(this.props.group);
-    this.props.setStartLights(-2);
+    // one instanced draw for every sign in the city (facades + props like bus stops and exit signs)
+    const signs = [...placeSigns(atlas, this.city.facades), ...this.props.signs];
+    this.root.add(buildSignMesh(atlas, signs));
 
     // ---------------------------------------------------------------- sky + global lights
     this.sky = new Sky();
     this.root.add(this.sky.mesh);
-    this.hemi = new THREE.HemisphereLight(0x2a3560, 0x0c0808, 0.35);
+    // overcast city night: neutral blue-grey sky fill, warm bounce from sodium-lit streets
+    this.hemi = new THREE.HemisphereLight(0x2c323d, 0x16110c, 0.32);
     this.root.add(this.hemi);
-    this.moon = new THREE.DirectionalLight(0x8fa4ff, 0.22);
+    this.moon = new THREE.DirectionalLight(0xa9b3c4, 0.12);
     this.moon.position.set(-450, 420, -780);
     this.moon.target.position.set(0, 0, 0);
     this.root.add(this.moon, this.moon.target);

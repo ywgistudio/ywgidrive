@@ -10,6 +10,8 @@ import type { TrackGrid } from './TrackGrid';
 import { applyPatches } from './ShaderPatch';
 import { worldUniforms } from './TrackMaterials';
 import { Rng } from './rng';
+import type { SignAtlas, SignInstance } from './Signage';
+import { lampColor } from './LampPalette';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _m = new THREE.Matrix4();
@@ -69,6 +71,8 @@ export class StreetProps {
   private startLights!: THREE.InstancedMesh;
   private trafficLenses: { mesh: THREE.InstancedMesh; phases: number[] } | null = null;
   readonly darkMetal: THREE.MeshStandardMaterial;
+  /** sign quads contributed by props (bus-stop posters, tunnel exit signs); drawn with the city's signs */
+  readonly signs: SignInstance[] = [];
 
   constructor(
     readonly track: Track,
@@ -79,6 +83,7 @@ export class StreetProps {
     readonly grid: TrackGrid,
     readonly zebras: number[],
     readonly quality: { particles: number; bloom: boolean },
+    readonly atlas: SignAtlas,
   ) {
     this.group.name = 'streetProps';
     this.darkMetal = applyPatches(new THREE.MeshStandardMaterial({ color: 0x2b2e34, metalness: 0.75, roughness: 0.42 }), [lamps.patch({ flat: true })]);
@@ -90,6 +95,8 @@ export class StreetProps {
     this.buildTrafficLights();
     this.buildTrees();
     this.buildDocks();
+    this.buildBusStops();
+    this.buildRoadworks();
   }
 
   private nearestSample(p: THREE.Vector3): number {
@@ -108,8 +115,9 @@ export class StreetProps {
     for (const L of t.lamps) {
       const f = t.frameAt(L.s);
       const si = t.wrap(Math.round(L.s / t.step));
+      const lc = lampColor(t, L);
       if (L.tunnel) {
-        fixtures.push({ pos: L.pos.clone().add(new THREE.Vector3(0, 0.15, 0)), quat: quatFromFrame(f.tangent), scale: new THREE.Vector3(0.45, 0.14, 2.6), sample: si, color: L.color.clone().multiplyScalar(9) });
+        fixtures.push({ pos: L.pos.clone().add(new THREE.Vector3(0, 0.15, 0)), quat: quatFromFrame(f.tangent), scale: new THREE.Vector3(0.45, 0.14, 2.6), sample: si, color: lc.clone().multiplyScalar(9) });
         continue;
       }
       const baseLat = L.side * (t.halfWidth + 0.9);
@@ -125,9 +133,9 @@ export class StreetProps {
       const armQ = quatFromFrame(dir);
       arms.push({ pos: new THREE.Vector3(base.x, topY - 0.05, base.z).addScaledVector(dir, len * 0.5), quat: armQ, scale: new THREE.Vector3(0.12, 0.12, len + 0.2), sample: si });
       heads.push({ pos: head.clone().add(new THREE.Vector3(0, 0.12, 0)), quat: armQ, scale: new THREE.Vector3(0.5, 0.2, 1.05), sample: si });
-      lenses.push({ pos: head.clone().add(new THREE.Vector3(0, -0.0, 0)), quat: armQ, scale: new THREE.Vector3(0.38, 0.04, 0.85), sample: si, color: L.color.clone().multiplyScalar(14) });
+      lenses.push({ pos: head.clone().add(new THREE.Vector3(0, -0.0, 0)), quat: armQ, scale: new THREE.Vector3(0.38, 0.04, 0.85), sample: si, color: lc.clone().multiplyScalar(12) });
       const coneH = head.y - (f.pos.y - 0.2);
-      cones.push({ pos: head.clone(), quat: new THREE.Quaternion(), scale: new THREE.Vector3(coneH * 0.62, coneH, coneH * 0.62), sample: si, color: L.color.clone() });
+      cones.push({ pos: head.clone(), quat: new THREE.Quaternion(), scale: new THREE.Vector3(coneH * 0.62, coneH, coneH * 0.62), sample: si, color: lc.clone() });
     }
     const poleGeo = new THREE.CylinderGeometry(0.085, 0.14, 1, 10, 1).translate(0, 0.5, 0);
     this.group.add(instanced(poleGeo, this.darkMetal, poles, 'lampPoles'));
@@ -240,12 +248,23 @@ export class StreetProps {
           fans.push({ pos: f.pos.clone().addScaledVector(f.right, sd * 1.6).addScaledVector(f.up, TUNNEL_HEIGHT - 0.75), quat: quatFromFrame(f.tangent), scale: new THREE.Vector3(1, 1, 1), sample: i });
         }
       }
+      // small wall-mounted delineator lights (white on the right, amber on the left, like real tunnels)
       for (let i = a; i < b; i += 6) {
         const f = t.frameAt(i * t.step);
         for (const sd of [-1, 1]) {
           const lat = sd * (t.halfWidth + t.sidewalk[i] - 0.02);
-          leds.push({ pos: f.pos.clone().addScaledVector(f.right, lat).addScaledVector(f.up, 0.95), quat: quatFromFrame(f.tangent), scale: new THREE.Vector3(0.05, 0.08, 0.5), sample: i, color: (i / 6) % 4 === 0 ? new THREE.Color(0.1, 3, 0.6) : new THREE.Color(2.5, 1.2, 0.2) });
+          leds.push({ pos: f.pos.clone().addScaledVector(f.right, lat).addScaledVector(f.up, 0.9), quat: quatFromFrame(f.tangent), scale: new THREE.Vector3(0.04, 0.07, 0.16), sample: i, color: sd > 0 ? new THREE.Color(1.6, 1.5, 1.3) : new THREE.Color(1.8, 0.8, 0.15) });
         }
+      }
+      // emergency exit signs every ~110 m, alternating walls
+      const exitCell = this.atlas.byName('i', 'exit');
+      let k = 0;
+      for (let i = a + 25; i < b - 10; i += 55, k++) {
+        const f = t.frameAt(i * t.step);
+        const sd = k % 2 === 0 ? 1 : -1;
+        const lat = sd * (t.halfWidth + t.sidewalk[i] - 0.06);
+        const n = f.right.clone().multiplyScalar(-sd).setY(0).normalize();
+        this.signs.push({ cell: exitCell, pos: f.pos.clone().addScaledVector(f.right, lat).addScaledVector(f.up, 2.5), normal: n, up: UP, width: 0.9, height: 0.9, color: new THREE.Color(1.3, 1.3, 1.3), flicker: 0, phase: 0 });
       }
     }
     if (geos.length) {
@@ -303,54 +322,91 @@ export class StreetProps {
     mesh.name = 'gantry';
     this.group.add(mesh);
 
-    // banners (front faces oncoming cars: normal = -tangent)
+    // banners (front faces oncoming cars: normal = -tangent): matte black truss banner, white type
     const front = bannerTexture(2048, 256, (ctx) => {
-      const g = ctx.createLinearGradient(0, 0, 2048, 0);
-      g.addColorStop(0, '#0a0012');
-      g.addColorStop(0.5, '#1a0630');
-      g.addColorStop(1, '#0a0012');
-      ctx.fillStyle = g;
+      ctx.fillStyle = '#121315';
       ctx.fillRect(0, 0, 2048, 256);
-      // checker ends
+      ctx.fillStyle = '#1b1c1f';
+      ctx.fillRect(0, 0, 2048, 18);
+      ctx.fillRect(0, 238, 2048, 18);
+      // checkered flag blocks at both ends
       for (let x = 0; x < 6; x++) for (let y = 0; y < 4; y++) {
-        ctx.fillStyle = (x + y) % 2 ? '#ffffff' : '#000000';
-        ctx.fillRect(x * 32 + 20, y * 64, 32, 64);
-        ctx.fillRect(2048 - 212 + x * 32, y * 64, 32, 64);
+        ctx.fillStyle = (x + y) % 2 ? '#e8e8e6' : '#151515';
+        ctx.fillRect(x * 30 + 24, y * 52 + 24, 30, 52);
+        ctx.fillRect(2048 - 204 + x * 30, y * 52 + 24, 30, 52);
       }
-      ctx.font = '900 italic 170px "Arial Black", Impact, sans-serif';
+      ctx.fillStyle = '#ffb400';
+      ctx.fillRect(250, 196, 1548, 6);
+      ctx.font = 'bold 150px Helvetica, Arial, "Liberation Sans", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = '#ff2d95';
-      ctx.shadowBlur = 40;
-      ctx.fillStyle = '#ff5cb3';
-      ctx.fillText('YWGI  DRIVE', 1024, 132);
-      ctx.shadowBlur = 8;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText('YWGI  DRIVE', 1024, 132);
+      ctx.fillStyle = '#f2f2ef';
+      ctx.fillText('YWGI  DRIVE', 1024, 118, 1500);
     });
     const back = bannerTexture(2048, 256, (ctx) => {
-      ctx.fillStyle = '#05060f';
+      ctx.fillStyle = '#121315';
       ctx.fillRect(0, 0, 2048, 256);
-      ctx.font = '900 italic 130px "Arial Black", Impact, sans-serif';
+      ctx.font = 'bold 110px Helvetica, Arial, "Liberation Sans", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = '#00e5ff';
-      ctx.shadowBlur = 36;
-      ctx.fillStyle = '#7ff3ff';
-      ctx.fillText('MIDNIGHT CIRCUIT', 1024, 132);
+      ctx.fillStyle = '#e8e8e4';
+      ctx.fillText('START  /  FINISH', 1024, 128, 1700);
     });
     const bw = span * 2 + 0.5;
     for (const [tex, dir] of [
       [front, -1],
       [back, 1],
     ] as [THREE.Texture, number][]) {
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(bw, bw / 8), new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(2.2, 2.2, 2.2), fog: true }));
+      // printed banners are lit by the streetlights/headlights, not glowing: keep them dim
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(bw, bw / 8), new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(0.55, 0.55, 0.55), fog: true }));
       const p = f.pos.clone().addScaledVector(f.up, 7.7).addScaledVector(f.tangent, dir * 0.72);
       m.position.copy(p);
       m.quaternion.copy(quatFromFrame(f.tangent.clone().multiplyScalar(dir)));
       m.name = 'gantryBanner';
       this.group.add(m);
     }
+    // LED timing board on the right-hand upright (amber dot matrix)
+    const board = bannerTexture(512, 256, (ctx) => {
+      ctx.fillStyle = '#050505';
+      ctx.fillRect(0, 0, 512, 256);
+      const dots = (str: string, y0: number, px: number, col: string) => {
+        const c = document.createElement('canvas');
+        c.width = 512;
+        c.height = 128;
+        const g = c.getContext('2d')!;
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, 512, 128);
+        g.fillStyle = '#fff';
+        g.font = `bold ${px}px "Courier New", monospace`;
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText(str, 256, 64, 480);
+        const data = g.getImageData(0, 0, 512, 128).data;
+        ctx.fillStyle = col;
+        for (let y = 2; y < 128; y += 6) for (let x = 2; x < 512; x += 6) {
+          if (data[(y * 512 + x) * 4] > 100) {
+            ctx.beginPath();
+            ctx.arc(x, y0 + y, 2.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      };
+      dots('LAP RECORD', 4, 54, '#ffae1a');
+      dots('1:27.408', 118, 92, '#ffbf3a');
+    });
+    const boardMesh = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), new THREE.MeshBasicMaterial({ map: board, color: new THREE.Color(2.2, 2.2, 2.2), fog: true }));
+    boardMesh.position.copy(f.pos.clone().addScaledVector(f.right, span - 1.9).addScaledVector(f.up, 4.4).addScaledVector(f.tangent, -0.5));
+    boardMesh.quaternion.copy(quatFromFrame(f.tangent.clone().negate()));
+    boardMesh.name = 'timingBoard';
+    this.group.add(boardMesh);
+    const backing = new THREE.BoxGeometry(3.4, 1.8, 0.2);
+    backing.applyQuaternion(q);
+    const bp = f.pos.clone().addScaledVector(f.right, span - 1.9).addScaledVector(f.up, 4.4).addScaledVector(f.tangent, -0.38);
+    backing.translate(bp.x, bp.y, bp.z);
+    backing.setAttribute('sampleIdx', new THREE.BufferAttribute(new Float32Array(backing.attributes.position.count).fill(si), 1));
+    const backMesh = new THREE.Mesh(backing, this.darkMetal);
+    backMesh.name = 'timingBoardBack';
+    this.group.add(backMesh);
     // start lights: 5 columns x 2 rows, on the face toward the grid
     const lights: Inst[] = [];
     for (let c = 0; c < 5; c++) {
@@ -387,9 +443,9 @@ export class StreetProps {
     const t = this.track;
     const defs = [
       { s: 420, lines: ['HARBOR  ⟶', 'DOCKS 1.2 km'] },
-      { s: 1240, lines: ['MIDNIGHT TUNNEL', 'NO STOPPING  700 m'] },
+      { s: 1240, lines: ['HARBOR TUNNEL', 'NO STOPPING  700 m'] },
       { s: 2620, lines: ['DOWNTOWN', 'CITY CENTRE  ⟶'] },
-      { s: 3330, lines: ['YWGI DRIVE', 'START / FINISH 500 m'] },
+      { s: 3330, lines: ['CENTRAL AVE', 'CIVIC CENTER  ⟶'] },
     ];
     const geos: THREE.BufferGeometry[] = [];
     for (const d of defs) {
@@ -641,7 +697,7 @@ export class StreetProps {
     add(3, 8, 3, 6, 50, 0);
     add(6, 4, 7, 2, 39, 0);
     const crane = mergeGeometries(craneGeos)!;
-    const craneMat = applyPatches(new THREE.MeshStandardMaterial({ color: 0x8a1c14, roughness: 0.6, metalness: 0.4 }), [this.lamps.patch({ flat: true })]);
+    const craneMat = applyPatches(new THREE.MeshStandardMaterial({ color: 0x5e1a14, roughness: 0.65, metalness: 0.35 }), [this.lamps.patch({ flat: true })]);
     const cranes: Inst[] = [];
     for (const s of [1290, 1390, 1490, 1660, 1740]) {
       const i = t.wrap(Math.round(s / t.step));
@@ -657,6 +713,137 @@ export class StreetProps {
       cranes.push({ pos: p, quat: new THREE.Quaternion().setFromRotationMatrix(_b), scale: new THREE.Vector3(1, r.range(0.9, 1.1), 1), sample: i });
     }
     this.group.add(instanced(crane, craneMat, cranes, 'cranes'));
+    // work floodlights under the boom and the legs' platform, red obstruction light on top
+    const work: Inst[] = [];
+    const lp = new THREE.Vector3();
+    for (const c of cranes) {
+      const pts: [number, number, number, THREE.Color][] = [
+        [-50, 43.2, 0, new THREE.Color(9, 7.2, 4.8)],
+        [-30, 43.2, 0, new THREE.Color(9, 7.2, 4.8)],
+        [-10, 43.2, 0, new THREE.Color(9, 7.2, 4.8)],
+        [0, 40.6, -6, new THREE.Color(8, 4.2, 1.4)],
+        [0, 40.6, 6, new THREE.Color(8, 4.2, 1.4)],
+        [6, 54.3, 0, new THREE.Color(10, 0.35, 0.2)],
+      ];
+      for (const [x, y, z, col] of pts) {
+        lp.set(x, y * c.scale.y, z).applyQuaternion(c.quat).add(c.pos);
+        work.push({ pos: lp.clone(), quat: c.quat.clone(), scale: new THREE.Vector3(1.4, 0.35, 0.9), sample: c.sample, color: col });
+      }
+    }
+    if (work.length) this.group.add(instanced(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ color: 0xffffff }), work, 'craneLights', false));
+  }
+
+  // ------------------------------------------------------------------ bus stops with lit ad panels
+  private buildBusStops() {
+    const t = this.track;
+    const r = new Rng(4040);
+    const parts: THREE.BufferGeometry[] = [];
+    const glass: THREE.BufferGeometry[] = [];
+    let side = 1;
+    for (let s = 300; s < t.length - 60; s += r.range(230, 330)) {
+      const i = t.wrap(Math.round(s / t.step));
+      const zone = t.zoneAt(i);
+      if (t.tunnelBlend[i] > 0.01 || (zone !== 'downtown' && zone !== 'park' && zone !== 'harbor')) continue;
+      if (Math.abs(t.deltaS(s, START_S)) < 120 || this.zebras.some((z) => Math.abs(t.deltaS(z, s)) < 30)) continue;
+      if (Math.abs(t.curvature[i]) > 0.01) continue;
+      side = -side;
+      const f = t.frameAt(s);
+      const q = quatFromFrame(f.tangent);
+      const lat = side * (t.halfWidth + t.sidewalk[i] - 1.0);
+      const base = f.pos.clone().addScaledVector(f.right, lat).addScaledVector(f.up, CURB_HEIGHT);
+      const out = f.right.clone().multiplyScalar(-side).setY(0).normalize(); // toward the road
+      const box = (list: THREE.BufferGeometry[], w: number, h: number, d: number, along: number, across: number, up: number) => {
+        const g = new THREE.BoxGeometry(w, h, d);
+        g.applyQuaternion(q);
+        const p = base.clone().addScaledVector(f.tangent, along).addScaledVector(out, across);
+        p.y += up;
+        g.translate(p.x, p.y, p.z);
+        g.setAttribute('sampleIdx', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count).fill(i), 1));
+        list.push(g);
+      };
+      // roof, two posts, a back pane of glass and an end ad box
+      box(parts, 1.7, 0.09, 4.2, 0, 0, 2.45);
+      for (const al of [-1.9, 1.9]) box(parts, 0.08, 2.45, 0.08, al, -0.7, 1.22);
+      box(glass, 0.04, 1.9, 3.6, 0, -0.78, 1.15);
+      box(parts, 1.35, 1.95, 0.24, 2.0, -0.05, 1.2);
+      box(parts, 1.4, 0.04, 0.6, 0, -0.25, 0.45);
+      // poster on both faces of the end ad box
+      const cell = this.atlas.pick('p', r);
+      const adCenter = base.clone().addScaledVector(f.tangent, 2.0).addScaledVector(out, -0.05);
+      adCenter.y += 1.25;
+      for (const dir of [1, -1]) {
+        this.signs.push({ cell, pos: adCenter.clone().addScaledVector(f.tangent, dir * 0.13), normal: f.tangent.clone().multiplyScalar(dir).setY(0).normalize(), up: UP, width: 1.15, height: 1.72, color: new THREE.Color(1.15, 1.15, 1.15), flicker: 0, phase: 0 });
+      }
+      // bus stop flag sign on a short pole
+      const flag = base.clone().addScaledVector(f.tangent, -2.6).addScaledVector(out, 0.6);
+      flag.y += 2.6;
+      box(parts, 0.07, 2.6, 0.07, -2.6, 0.6, 1.3);
+      this.signs.push({ cell: this.atlas.byName('i', 'bus'), pos: flag.clone().addScaledVector(out, 0.05), normal: out.clone(), up: UP, width: 0.55, height: 0.55, color: new THREE.Color(0.7, 0.7, 0.7), flicker: 0, phase: 0 });
+    }
+    if (parts.length) {
+      const m = new THREE.Mesh(mergeGeometries(parts)!, this.darkMetal);
+      m.name = 'busStops';
+      this.group.add(m);
+      const gm = applyPatches(new THREE.MeshStandardMaterial({ color: 0x1a2026, roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.35, depthWrite: false }), [this.lamps.patch({ flat: true })]);
+      const g = new THREE.Mesh(mergeGeometries(glass)!, gm);
+      g.name = 'busStopGlass';
+      this.group.add(g);
+    }
+  }
+
+  // ------------------------------------------------------------------ roadworks: barricades with amber blinkers
+  private buildRoadworks() {
+    const t = this.track;
+    const r = new Rng(9191);
+    const boards: Inst[] = [];
+    const blinkers: Inst[] = [];
+    const phases: number[] = [];
+    const spots = [640, 1060, 2930, 3420];
+    for (const s0 of spots) {
+      const i0 = t.wrap(Math.round(s0 / t.step));
+      if (t.tunnelBlend[i0] > 0.01) continue;
+      const side = r.chance(0.5) ? 1 : -1;
+      for (let k = 0; k < 5; k++) {
+        const s = s0 + k * 3.2;
+        const i = t.wrap(Math.round(s / t.step));
+        const f = t.frameAt(s);
+        const lat = side * (t.halfWidth + Math.min(1.6, t.sidewalk[i] * 0.4));
+        const p = f.pos.clone().addScaledVector(f.right, lat).addScaledVector(f.up, CURB_HEIGHT);
+        boards.push({ pos: p, quat: quatFromFrame(f.tangent), scale: new THREE.Vector3(0.12, 1.0, 2.6), sample: i });
+        const bl = p.clone();
+        bl.y += 1.18;
+        blinkers.push({ pos: bl, quat: new THREE.Quaternion(), scale: new THREE.Vector3(1, 1, 1), sample: i, color: new THREE.Color(1, 1, 1) });
+        phases.push(k * 0.18);
+      }
+    }
+    if (!boards.length) return;
+    const boardGeo = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+    const boardMat = applyPatches(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 }), [
+      this.lamps.patch({ flat: true }),
+      {
+        key: 'barricade',
+        vertexHeader: 'varying vec3 vBP;',
+        vertex: [{ after: 'begin_vertex', code: 'vBP = position * vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));' }],
+        fragmentHeader: 'varying vec3 vBP;',
+        // retro-reflective red/white chevron boards on top of the frame
+        fragment: [{ after: 'color_fragment', code: 'float band = step(0.62, vBP.y) * step(vBP.y, 0.95); float stripe = step(0.5, fract((vBP.z + vBP.y) * 1.6)); diffuseColor.rgb = mix(vec3(0.12), mix(vec3(0.75, 0.05, 0.04), vec3(0.85), stripe), band);' }],
+      },
+    ]);
+    this.group.add(instanced(boardGeo, boardMat, boards, 'barricades'));
+    const blGeo = new THREE.SphereGeometry(0.1, 10, 8);
+    blGeo.setAttribute('aPhase', new THREE.InstancedBufferAttribute(new Float32Array(phases), 1));
+    const blMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(9, 4.2, 0.4), fog: true });
+    applyPatches(blMat, [
+      {
+        key: 'blinker',
+        uniforms: { uTime: worldUniforms.uTime },
+        vertexHeader: 'attribute float aPhase; varying float vOn; uniform float uTime;',
+        vertex: [{ after: 'begin_vertex', code: 'vOn = step(fract(uTime * 1.1 + aPhase), 0.45);' }],
+        fragmentHeader: 'varying float vOn;',
+        fragment: [{ after: 'color_fragment', code: 'diffuseColor.rgb *= 0.03 + vOn;' }],
+      },
+    ]);
+    this.group.add(instanced(blGeo, blMat, blinkers, 'roadworkBlinkers', false));
   }
 
   update(time: number) {

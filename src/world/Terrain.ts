@@ -203,7 +203,7 @@ export class Terrain {
     // a huge far plane so the horizon never shows a void beyond the terrain tiles
     const far = new THREE.Mesh(
       new THREE.RingGeometry(1, 9000, 32, 1).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0x050409 }),
+      new THREE.MeshBasicMaterial({ color: 0x07080a }),
     );
     far.position.set(this.center.x, -9, this.center.y);
     far.scale.setScalar(1);
