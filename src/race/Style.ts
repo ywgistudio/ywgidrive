@@ -26,6 +26,8 @@ export class Style {
   topSpeed = 0;
   private draftTime = 0;
   events: StyleEvent[] = [];
+  /** score multiplier (drunk mode doubles everything) */
+  multiplier = 1;
 
   update(dt: number, v: Vehicle, crashed: boolean, drafting: boolean) {
     this.topSpeed = Math.max(this.topSpeed, v.speedKmh);
@@ -40,7 +42,7 @@ export class Style {
       this.calm = 0;
       this.driftTime += dt;
       this.driftMult = Math.min(5, 1 + Math.floor(this.driftTime / 1.5));
-      this.driftPoints += dt * speed * (slip * 6) * this.driftMult;
+      this.driftPoints += dt * speed * (slip * 6) * this.driftMult * this.multiplier;
     } else if (this.driftActive) {
       this.calm += dt;
       if (this.calm > 0.7 || speed < 6) this.bankDrift();
@@ -99,6 +101,10 @@ export class Style {
   }
 
   add(title: string, sub: string, color: string, points: number, nitro: number) {
+    if (this.multiplier !== 1 && !title.startsWith('DRIFT') && !title.includes('DRIFT')) {
+      points = Math.round(points * this.multiplier);
+      sub = `+${points}`;
+    }
     this.total += points;
     this.events.push({ title, sub, color, points, nitro });
   }

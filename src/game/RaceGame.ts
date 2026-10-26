@@ -25,6 +25,7 @@ import { NearMissDetector } from '../ai/NearMiss';
 import { Race, type Racer } from '../race/Race';
 import { Style } from '../race/Style';
 import { carModelFor, RIVALS } from './Roster';
+import { Drunk } from './Drunk';
 
 type Mode = 'boot' | 'title' | 'menu' | 'carselect' | 'race' | 'paused' | 'results';
 
@@ -209,8 +210,16 @@ export class RaceGame {
     this.post.setMenuMode(true);
     this.audio.setMenuMode(true);
     this.ui.showHud(false);
+    this.setDrunkFx(0);
     this.ui.showMainMenu({
-      onRace: () => this.goCarSelect(),
+      onRace: () => {
+        this.drunkMode = false;
+        this.goCarSelect();
+      },
+      onDrunk: () => {
+        this.drunkMode = true;
+        this.goCarSelect();
+      },
       onSettings: () => this.ui.showSettings(this.settings, (s) => this.applySettings(s), () => this.goMenu()),
       onControls: () => this.ui.showControls(() => this.goMenu()),
     });
@@ -248,6 +257,13 @@ export class RaceGame {
     }
     for (const c of this.cars) if (!c.ai) c.vehicle.assists = assistsFor(s);
     this.ui.setFps(s.showFps ? 0 : null);
+  }
+
+  /** Turn drunk visuals/audio/HUD on (level) or off (0). */
+  private setDrunkFx(level: number) {
+    this.post?.setDrunk(level);
+    this.audio.setDrunk(level);
+    this.ui?.setDrunk(level > 0 ? level : null);
   }
 
   private applyAudioSettings() {
@@ -383,6 +399,13 @@ export class RaceGame {
         }
       },
     };
+    this.style.multiplier = this.drunkMode ? 2 : 1;
+    if (this.drunkMode && this.player) {
+      this.drunk.reset(0.75);
+      // keep it drivable: full assists while impaired
+      this.player.vehicle.assists = { ...assistsFor({ ...this.settings, assists: 'casual' }) };
+    }
+    this.setDrunkFx(this.drunkMode ? 0.75 : 0);
     this.env.setStartLights(0);
     this.mode = 'race';
     this.touch?.show(true);
@@ -490,6 +513,7 @@ export class RaceGame {
   private showResults() {
     const race = this.race!;
     this.mode = 'results';
+    this.setDrunkFx(0);
     this.touch?.show(false);
     // estimate finish times for unfinished racers
     const L = this.track.length * race.laps;
@@ -623,6 +647,13 @@ export class RaceGame {
       pv.input.brake = s.brake;
       pv.input.steer = s.steer;
       pv.input.handbrake = s.handbrake;
+      if (this.drunkMode && race.started) {
+        const o = this.drunk.apply(dt, s, 0.75);
+        pv.input.throttle = o.throttle;
+        pv.input.brake = o.brake;
+        pv.input.steer = o.steer;
+        pv.input.handbrake = o.handbrake;
+      }
       pv.input.nitro = s.nitro && race.started;
       if (!race.started) {
         pv.input.brake = 1;
@@ -649,7 +680,17 @@ export class RaceGame {
 
     // camera
     const driftAmt = pv.drifting ? THREE.MathUtils.clamp(Math.abs(pv.driftAngle) / 0.6, 0, 1) : 0;
-    this.chase.update(dt, { position: P.renderPos, quaternion: P.renderQuat, velocity: pv.velocity }, Math.abs(pv.speed), pv.boosting, inp.state.lookBack, pv.groundedWheels === 0, driftAmt);
+    const drunkAmt = this.drunkMode ? this.drunk.level || 0.75 : 0;
+    this.chase.update(dt, { position: P.renderPos, quaternion: P.renderQuat, velocity: pv.velocity }, Math.abs(pv.speed), pv.boosting, inp.state.lookBack, pv.groundedWheels === 0, driftAmt, drunkAmt);
+    if (this.drunkMode) {
+      this.post.setDrunk(drunkAmt);
+      this.audio.setDrunk(drunkAmt);
+      this.drunkUiT -= dt;
+      if (this.drunkUiT <= 0) {
+        this.drunkUiT = 0.25;
+        this.ui.setDrunk(drunkAmt);
+      }
+    }
     const sNorm = THREE.MathUtils.clamp(pv.speedKmh / 320, 0, 1);
     this.post.setSpeed(sNorm);
     this.post.setNitro(pv.boosting);
@@ -760,6 +801,9 @@ export class RaceGame {
     this.syncAudio();
   }
   private _wasBoost = false;
+  drunkMode = false;
+  private drunk = new Drunk();
+  private drunkUiT = 0;
   private pauseGuard = 0;
 
   private handleContacts(): boolean {

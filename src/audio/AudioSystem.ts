@@ -84,6 +84,9 @@ export class AudioSystem {
   private crashVoices = 0;
   private menuMode = false;
   private tunnel = 0;
+  private drunkLP: BiquadFilterNode | null = null;
+  private drunk = 0;
+  private drunkT = 0;
 
   init(): Promise<void> {
     if (!this.initPromise) this.initPromise = this.doInit();
@@ -121,7 +124,12 @@ export class AudioSystem {
     limiter.release.value = 0.2;
     limiter.connect(ctx.destination);
     this.master = ctx.createGain();
-    this.master.connect(limiter);
+    // drunk-mode muffle sits between the master bus and the limiter (wide open normally)
+    this.drunkLP = ctx.createBiquadFilter();
+    this.drunkLP.type = 'lowpass';
+    this.drunkLP.frequency.value = 20000;
+    this.drunkLP.Q.value = 0.9;
+    this.master.connect(this.drunkLP).connect(limiter);
 
     this.musicGain = ctx.createGain();
     this.musicDuck = ctx.createGain();
@@ -483,9 +491,25 @@ export class AudioSystem {
     setParam(this.tunnelSend.gain, this.tunnel * 0.55, ctx, 0.25);
   }
 
+  /** Drunk mode: muffled, woozy mix with a slowly warbling music pitch. 0 = sober. */
+  setDrunk(amount: number): void {
+    this.drunk = Math.max(0, Math.min(1, amount));
+    if (this.drunk === 0 && this.ctx && this.drunkLP) {
+      setParam(this.drunkLP.frequency, 20000, this.ctx, 0.3);
+      if (this.music) setParam(this.music.src.detune, 0, this.ctx, 0.3);
+    }
+  }
+
   update(dt: number): void {
     const ctx = this.ctx;
     if (!ctx || !this.scrapeGain) return;
+    if (this.drunk > 0 && this.drunkLP) {
+      this.drunkT += dt;
+      const t = this.drunkT, d = this.drunk;
+      const wob = Math.sin(t * 0.7) * 0.5 + Math.sin(t * 1.9 + 1.3) * 0.3;
+      setParam(this.drunkLP.frequency, 2600 - d * 1500 + wob * 600 * d, ctx, 0.1);
+      if (this.music) setParam(this.music.src.detune, (Math.sin(t * 0.45) * 35 + Math.sin(t * 1.3) * 12) * d, ctx, 0.1);
+    }
     this.scrapeAge += dt;
     if (this.scrapeAge > 0.15) this.scrapeLevel = Math.max(0, this.scrapeLevel - dt * 6);
     const lvl = this.scrapeLevel;

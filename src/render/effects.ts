@@ -87,12 +87,12 @@ export class GradeEffect extends Effect {
       blendFunction: BlendFunction.SRC,
       uniforms: new Map<string, THREE.Uniform>([
         ['exposure', new THREE.Uniform(1)],
-        ['saturation', new THREE.Uniform(1.08)],
+        ['saturation', new THREE.Uniform(1.0)],
         ['tint', new THREE.Uniform(new THREE.Vector3(1, 1, 1))],
         ['flash', new THREE.Uniform(0)],
         ['flashColor', new THREE.Uniform(new THREE.Vector3(1, 0.9, 0.85))],
         ['dim', new THREE.Uniform(0)],
-        ['lift', new THREE.Uniform(new THREE.Vector3(0.0, 0.004, 0.012))],
+        ['lift', new THREE.Uniform(new THREE.Vector3(0.002, 0.002, 0.003))],
       ]),
     });
   }
@@ -120,6 +120,42 @@ export class GrainEffect extends Effect {
     super('GrainEffect', grainFrag, {
       blendFunction: BlendFunction.SRC,
       uniforms: new Map<string, THREE.Uniform>([['amount', new THREE.Uniform(amount)]]),
+    });
+  }
+  set amount(v: number) {
+    this.uniforms.get('amount')!.value = v;
+  }
+}
+
+/**
+ * Drunk vision: wavy warp, drifting double image and a soft smear. Convolution (reads neighbours),
+ * so it lives in its own EffectPass that is disabled while sober.
+ */
+const drunkFrag = /* glsl */ `
+uniform float amount;
+void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
+  if (amount < 0.001) { outputColor = inputColor; return; }
+  float t = time;
+  vec2 warp = vec2(sin(uv.y * 8.0 + t * 1.6) + 0.5 * sin(uv.y * 21.0 - t * 2.3),
+                   cos(uv.x * 6.0 + t * 1.2)) * 0.0045 * amount;
+  vec2 p = uv + warp;
+  vec2 off = vec2(sin(t * 0.83) + 0.4 * sin(t * 2.1), 0.35 * sin(t * 0.61 + 1.7)) * 0.016 * amount;
+  vec3 c = texture2D(inputBuffer, p).rgb;
+  vec3 a = texture2D(inputBuffer, p + off).rgb;
+  vec3 b = texture2D(inputBuffer, p - off * 0.6).rgb;
+  vec3 s = (texture2D(inputBuffer, p + vec2(0.003, 0.002) * amount).rgb + texture2D(inputBuffer, p - vec2(0.002, 0.003) * amount).rgb) * 0.5;
+  vec3 col = mix(c, (a + b) * 0.5, 0.5 * amount);
+  col = mix(col, s, 0.35 * amount);
+  outputColor = vec4(col, inputColor.a);
+}
+`;
+
+export class DrunkEffect extends Effect {
+  constructor() {
+    super('DrunkEffect', drunkFrag, {
+      attributes: EffectAttribute.CONVOLUTION,
+      blendFunction: BlendFunction.SRC,
+      uniforms: new Map<string, THREE.Uniform>([['amount', new THREE.Uniform(0)]]),
     });
   }
   set amount(v: number) {

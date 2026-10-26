@@ -51,6 +51,7 @@ export class ChaseCamera {
     lookBack: boolean,
     airborne: boolean,
     drift = 0, // 0..1 how hard the car is drifting
+    drunk = 0, // 0..1 drunk-mode sway
   ) {
     this.time += dt;
     const cam = this.camera;
@@ -111,7 +112,7 @@ export class ChaseCamera {
 
     // FOV with speed + nitro
     this.driftS += (drift - this.driftS) * Math.min(1, dt * 4);
-    const fovTarget = this.baseFov + sNorm * 16 + (boosting ? 8 : 0) + this.driftS * 4;
+    const fovTarget = this.baseFov + sNorm * 16 + (boosting ? 8 : 0) + this.driftS * 4 + Math.sin(this.time * 0.9) * 3 * drunk;
     cam.fov += (fovTarget - cam.fov) * Math.min(1, dt * 3);
 
     // shake: speed rumble + impacts
@@ -124,6 +125,15 @@ export class ChaseCamera {
         cam.position.y += Math.sin(t * 41.3) * rumble * 0.7;
         cam.rotateZ(Math.sin(t * 23.3) * rumble * 0.25);
       }
+    }
+    // drunk sway: slow lateral drift, head roll and breathing FOV
+    if (drunk > 0) {
+      const t = this.time;
+      const right = _v.set(1, 0, 0).applyQuaternion(cam.quaternion);
+      cam.position.addScaledVector(right, (Math.sin(t * 0.7) * 0.35 + Math.sin(t * 1.9) * 0.12) * drunk);
+      cam.position.y += Math.sin(t * 1.1 + 0.4) * 0.12 * drunk;
+      cam.rotateZ((Math.sin(t * 0.53) * 0.07 + Math.sin(t * 1.7 + 1.0) * 0.025) * drunk);
+      cam.rotateY(Math.sin(t * 0.37 + 2.0) * 0.035 * drunk);
     }
     cam.updateProjectionMatrix();
     this.initialized = true;

@@ -14,7 +14,7 @@ import {
   BlendFunction,
 } from 'postprocessing';
 import type { QualityProfile } from '../core/Settings';
-import { GradeEffect, GrainEffect, RadialBlurEffect } from './effects';
+import { DrunkEffect, GradeEffect, GrainEffect, RadialBlurEffect } from './effects';
 import { applyPixelRatio } from './Renderer';
 
 const damp = (cur: number, target: number, rate: number, dt: number) => cur + (target - cur) * (1 - Math.exp(-rate * dt));
@@ -44,6 +44,10 @@ export class PostFX {
   private vignette!: VignetteEffect;
   private smaa: SMAAEffect | null = null;
   private passes: EffectPass[] = [];
+  private drunkFx!: DrunkEffect;
+  private drunkPass!: EffectPass;
+  private drunkTarget = 0;
+  private drunk = 0;
   private exposure = 1;
   private width = 0;
   private height = 0;
@@ -116,7 +120,17 @@ export class PostFX {
         this.passes.push(new EffectPass(cam, this.ca, this.tone, this.vignette, this.grain));
       }
     }
+    // drunk vision runs first on the HDR scene; disabled (skipped) while sober
+    this.drunkFx = new DrunkEffect();
+    this.drunkPass = new EffectPass(cam, this.drunkFx);
+    this.drunkPass.enabled = this.drunk > 0.001;
+    this.passes.unshift(this.drunkPass);
     for (const p of this.passes) this.composer.addPass(p);
+  }
+
+  /** Drunk mode intensity 0..1 (smoothed). */
+  setDrunk(amount: number) {
+    this.drunkTarget = THREE.MathUtils.clamp(amount, 0, 1);
   }
 
   /** Applies pixel-ratio cap and rebuilds the chain if bloom/SMAA availability changed. */
@@ -163,6 +177,9 @@ export class PostFX {
     this.nitro = damp(this.nitro, this.nitroTarget, this.nitroTarget > this.nitro ? 8 : 3, dt);
     this.menu = damp(this.menu, this.menuTarget, 5, dt);
     this.impactAmt = Math.max(0, this.impactAmt - dt * 3.2);
+    this.drunk = damp(this.drunk, this.drunkTarget, 1.5, dt);
+    this.drunkPass.enabled = this.drunk > 0.001;
+    this.drunkFx.amount = this.drunk;
 
     const sp = this.speed;
     const sp2 = Math.max(0, sp - 0.35) / 0.65; // only kicks in at higher speeds
@@ -179,13 +196,14 @@ export class PostFX {
 
     // grade: nitro blue push, impact flash, menu dim/desat
     const tint = this.grade.u<THREE.Vector3>('tint').value;
-    tint.set(1 - this.nitro * 0.08, 1 - this.nitro * 0.02, 1 + this.nitro * (0.12 + 0.05 * pulse));
+    const dk = this.drunk;
+    tint.set(1 - this.nitro * 0.08 + dk * 0.04, 1 - this.nitro * 0.02, 1 + this.nitro * (0.12 + 0.05 * pulse) - dk * 0.05);
     this.grade.u<number>('flash').value = imp * imp * 0.5;
     this.grade.u<number>('dim').value = this.menu * 0.35;
-    this.grade.u<number>('saturation').value = 1.08 - this.menu * 0.35 + this.nitro * 0.06;
+    this.grade.u<number>('saturation').value = 1.0 - this.menu * 0.35 + this.nitro * 0.06 - dk * 0.15;
 
     // vignette
-    this.vignette.darkness = 0.5 + sp2 * 0.15 + this.nitro * 0.12 + this.menu * 0.3 + imp * 0.2;
+    this.vignette.darkness = 0.5 + sp2 * 0.15 + this.nitro * 0.12 + this.menu * 0.3 + imp * 0.2 + dk * (0.25 + 0.12 * Math.sin(this.time * 1.1));
     this.vignette.offset = 0.32 - this.menu * 0.08;
 
     if (this.bloom) this.bloom.intensity = 1.15 + this.nitro * 0.25 + imp * 0.4;
